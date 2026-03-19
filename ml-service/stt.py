@@ -17,7 +17,8 @@ _model: WhisperModel | None = None
 def load() -> None:
     """Load the Whisper model and pre-warm it to reduce first-request latency."""
     global _model
-    _model = WhisperModel("small", device="cpu", compute_type="int8")
+    cpu_threads = max(1, (os.cpu_count() or 4) // 2)
+    _model = WhisperModel("small", device="cpu", compute_type="int8", cpu_threads=cpu_threads, num_workers=2)
     _warmup()
 
 
@@ -63,6 +64,7 @@ def transcribe(audio_bytes: bytes, language: str) -> str:
             beam_size=1,
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 300},
+            condition_on_previous_text=False,
         )
         return " ".join(s.text.strip() for s in segments).strip()
     finally:
