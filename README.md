@@ -1,0 +1,203 @@
+# free2talk
+
+Real-time multilingual video calling with live translated captions. Two users speaking different languages can video call and see each other's speech transcribed and translated as rolling subtitles.
+
+**Supported languages:** English · Romanian · Japanese
+
+---
+
+## How it works
+
+- WebRTC handles peer-to-peer video/audio directly between browsers
+- Every 1.5 seconds, each user's mic audio is sent to the server as a WebM chunk
+- The Go backend forwards chunks to the Python ML service (faster-whisper STT)
+- The transcript is translated via LibreTranslate and delivered as a caption event to the peer
+- Chat messages are also auto-translated on send
+
+---
+
+## Prerequisites
+
+| Tool | Version | Notes |
+|---|---|---|
+| Go | 1.22+ | Backend |
+| Node.js | 18+ | Frontend |
+| Python | 3.11+ | ML service |
+| Docker + Compose | any recent | PostgreSQL + LibreTranslate |
+| ffmpeg | any | Required by faster-whisper for WebM/Opus decoding |
+
+Install ffmpeg on Arch/Ubuntu:
+```bash
+# Arch
+sudo pacman -S ffmpeg
+
+# Ubuntu/Debian
+sudo apt install ffmpeg
+```
+
+---
+
+## Setup
+
+### 1. Clone and configure environment
+
+```bash
+git clone <repo-url> free2talk
+cd free2talk
+cp .env.example .env
+```
+
+Edit `.env` and set a strong `JWT_SECRET` (minimum 32 characters):
+```bash
+# Generate a random secret
+openssl rand -hex 32
+```
+
+Set `DEV_MODE=true` for local development (loosens CORS/origin checks).
+
+### 2. Start infrastructure
+
+```bash
+docker compose up -d postgres libretranslate
+```
+
+LibreTranslate downloads language models on first start (~500MB). Wait until it prints `Running on http://0.0.0.0:5000` before starting the backend.
+
+### 3. Set up the ML service
+
+```bash
+cd ml-service
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+The faster-whisper model downloads automatically on first startup (~500MB for `small`).
+
+### 4. Start the ML service
+
+```bash
+# From ml-service/ with venv active
+uvicorn main:app --uds /tmp/free2talk-ml.sock
+```
+
+> **Important:** Always use `--uds /tmp/free2talk-ml.sock`. The Go backend connects via Unix socket at that path. Running with plain TCP (`python main.py` or `--port 8090`) means the socket file never exists and all transcription silently fails.
+
+Wait for: `ML service ready.`
+
+### 5. Start the backend
+
+```bash
+cd backend
+make run
+```
+
+Wait for: `free2talk backend running on 0.0.0.0:8000`
+
+### 6. Start the frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### 7. Open the app
+
+- **https://localhost:5173** — HTTPS is required for microphone access (`getUserMedia`)
+- Accept the self-signed certificate warning in your browser
+- For LAN access from another device: **https://\<your-ip\>:5173** (same cert warning)
+
+---
+
+## Running order (summary)
+
+```
+Terminal 1:  docker compose up -d postgres libretranslate
+Terminal 2:  cd ml-service && source .venv/bin/activate && uvicorn main:app --uds /tmp/free2talk-ml.sock
+Terminal 3:  cd backend && make run
+Terminal 4:  cd frontend && npm run dev
+```
+
+---
+
+## LAN testing (two devices, same network)
+
+1. Find your machine's local IP: `ip addr` or `hostname -I`
+2. On the second device, open **https://\<your-ip\>:5173**
+3. Accept the self-signed certificate warning
+4. Register two accounts with different languages
+5. Add each other as friends, then start a call
+
+---
+
+## Local testing (two browser sessions, one machine)
+
+One browser tab can't share a camera with another. Options:
+
+**Option A — Phone + laptop** (recommended): Use the LAN method above.
+
+**Option B — Mock camera in one tab**: Paste this in one tab's DevTools console before calling:
+
+```js
+navigator.mediaDevices.getUserMedia = async () => {
+  const ctx = new AudioContext()
+  const dst = ctx.createMediaStreamDestination()
+  const canvas = document.createElement('canvas')
+  canvas.width = 640; canvas.height = 480
+  const c = canvas.getContext('2d')
+  setInterval(() => {
+    c.fillStyle = `hsl(${Date.now()/50 % 360},70%,50%)`
+    c.fillRect(0, 0, 640, 480)
+    c.fillStyle = 'white'; c.font = '48px sans-serif'; c.fillText('BOB', 260, 260)
+  }, 100)
+  return new MediaStream([...canvas.captureStream(15).getVideoTracks(), ...dst.stream.getAudioTracks()])
+}
+```
+
+**Option C — Virtual audio (PulseAudio/PipeWire)**:
+```bash
+pactl load-module module-null-sink sink_name=VirtualMic0 sink_properties=device.description=VirtualMic0
+pactl load-module module-loopback source=VirtualMic0.monitor
+```
+Then select VirtualMic0.monitor as the microphone in the browser.
+
+---
+
+## Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `8000` | Go backend port |
+| `DATABASE_URL` | — | PostgreSQL connection string |
+| `JWT_SECRET` | — | HS256 signing secret, minimum 32 chars |
+| `LIBRETRANSLATE_URL` | `http://localhost:5000` | LibreTranslate instance URL |
+| `ML_SOCKET_PATH` | `/tmp/free2talk-ml.sock` | Unix socket path to ml-service |
+| `ML_SERVICE_URL` | `http://localhost:8090` | TCP fallback if ML_SOCKET_PATH unset |
+| `DEV_MODE` | `false` | Set `true` for local dev (loosens CORS/origin checks) |
+
+---
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Go 1.22, chi router, gorilla/websocket, pgx |
+| ML service | Python 3.11, FastAPI, faster-whisper, CTranslate2 |
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS |
+| Database | PostgreSQL 16 |
+| Translation (chat) | LibreTranslate (self-hosted Docker, OPUS-MT) |
+| STT (captions) | faster-whisper `small`, int8, VAD |
+| Translation (captions) | LibreTranslate via Go backend |
+| Auth | JWT HS256, 24h expiry |
+| Video | WebRTC (browser-native, STUN only) |
+
+---
+
+## Known limitations
+
+- **No TURN server** — WebRTC uses STUN only. Connections between users behind symmetric NAT (some corporate networks, mobile carriers) may fail. Add Coturn for production.
+- **STUN servers** — Google's public STUN (`stun.l.google.com:19302`) is used. Replace with your own in production.
+- **Self-signed TLS** — Vite's `@vitejs/plugin-basic-ssl` is used for local dev. Production needs a real certificate (Let's Encrypt via certbot).
+- **No refresh tokens** — JWTs expire after 24h. Users must log in again.
+- **No DB migrations tool** — schema changes require manual `ALTER TABLE`.

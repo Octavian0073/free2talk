@@ -1,0 +1,26 @@
+# Environment — never commit secrets
+.env
+*.env.local
+
+# Session resume file — contains machine-specific absolute paths
+prompt.txt
+
+# Go
+backend/vendor/
+backend/*.test
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ML service
+ml-service/models/
+ml-service/__pycache__/
+ml-service/*.pyc
+ml-service/.venv/
+ml-service/venv/
+
+# OS
+.DS_Store
+Thumbs.db

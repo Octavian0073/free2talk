@@ -1,0 +1,38 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: free2talk
+      POSTGRES_PASSWORD: free2talk_dev
+      POSTGRES_DB: free2talk
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/internal/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      LT_LOAD_ONLY: "en,ro,ja"
+      LT_DISABLE_WEB_UI: "true"
+    volumes:
+      - lt_data:/home/libretranslate/.local
+
+  ml-service:
+    build: ./ml-service
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./ml-service/models:/app/models
+
+volumes:
+  postgres_data:
+  lt_data:
