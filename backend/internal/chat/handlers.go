@@ -243,10 +243,12 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Translate if languages differ; fall back to original on any error.
 	translatedText := req.Text
+	translationFailed := false
 	if senderLang != recipientLang {
 		t, err := h.Translate.Translate(req.Text, senderLang, recipientLang)
 		if err != nil {
 			log.Printf("translation error (falling back to original): %v", err)
+			translationFailed = true
 			// translatedText stays as req.Text — message is never lost
 		} else {
 			translatedText = t
@@ -275,15 +277,16 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	// Push to recipient's WebSocket if they are online.
 	// Wrap in a typed envelope so the frontend dispatcher can route by type.
 	if payload, err := json.Marshal(map[string]any{
-		"type":            "message",
-		"id":              msg.ID,
-		"sender_id":       msg.SenderID,
-		"recipient_id":    msg.RecipientID,
-		"original_text":   msg.OriginalText,
-		"translated_text": msg.TranslatedText,
-		"source_lang":     msg.SourceLang,
-		"target_lang":     msg.TargetLang,
-		"created_at":      msg.CreatedAt,
+		"type":               "message",
+		"id":                 msg.ID,
+		"sender_id":          msg.SenderID,
+		"recipient_id":       msg.RecipientID,
+		"original_text":      msg.OriginalText,
+		"translated_text":    msg.TranslatedText,
+		"source_lang":        msg.SourceLang,
+		"target_lang":        msg.TargetLang,
+		"created_at":         msg.CreatedAt,
+		"translation_failed": translationFailed,
 	}); err == nil {
 		h.Hub.Deliver(req.RecipientID, payload)
 	}

@@ -76,7 +76,7 @@ func main() {
 	// When using a Unix socket the URL host is ignored by the custom dialer,
 	// so "http://localhost" is just a placeholder that satisfies http.Request.
 	mlClient := audio.NewMLClient(mlSocketPath)
-	audioHandler := &audio.Handler{DB: pool, Hub: hub, MLURL: mlURL, Translate: translator, MLClient: mlClient, DevMode: devMode}
+	audioHandler := &audio.Handler{DB: pool, Hub: hub, MLURL: mlURL, MLClient: mlClient, DevMode: devMode}
 
 	var corsOrigins []string
 	if devMode {

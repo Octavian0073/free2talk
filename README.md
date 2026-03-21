@@ -9,9 +9,10 @@ Real-time multilingual video calling with live translated captions. Two users sp
 ## How it works
 
 - WebRTC handles peer-to-peer video/audio directly between browsers
-- Every 1.5 seconds, each user's mic audio is sent to the server as a WebM chunk
-- The Go backend forwards chunks to the Python ML service (faster-whisper STT)
-- The transcript is translated via LibreTranslate and delivered as a caption event to the peer
+- An AudioWorklet captures raw PCM from the mic at 16 kHz and sends 50 ms Int16 chunks over a binary WebSocket
+- The Go backend runs RMS energy VAD to detect utterance boundaries, then sends the complete utterance (WAV-wrapped) to the Python ML service
+- faster-whisper transcribes the full utterance; NLLB-200 translates it; the caption is delivered to the peer
+- Whisper receives complete sentences rather than fragments — captions appear in seconds with no repetition
 - Chat messages are also auto-translated on send
 
 ---
@@ -24,7 +25,7 @@ Real-time multilingual video calling with live translated captions. Two users sp
 | Node.js | 18+ | Frontend |
 | Python | 3.11+ | ML service |
 | Docker + Compose | any recent | PostgreSQL + LibreTranslate |
-| ffmpeg | any | Required by faster-whisper for WebM/Opus decoding |
+| ffmpeg | any | Required by faster-whisper for WAV/audio decoding |
 
 Install ffmpeg on Arch/Ubuntu:
 ```bash
@@ -187,8 +188,10 @@ Then select VirtualMic0.monitor as the microphone in the browser.
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
 | Database | PostgreSQL 16 |
 | Translation (chat) | LibreTranslate (self-hosted Docker, OPUS-MT) |
-| STT (captions) | faster-whisper `small`, int8, VAD |
-| Translation (captions) | LibreTranslate via Go backend |
+| Audio capture | AudioWorklet (browser), raw Int16 PCM at 16 kHz |
+| VAD | Go RMS energy VAD (pure math, no ML) |
+| STT (captions) | faster-whisper `small`, int8 |
+| Translation (captions) | NLLB-200 distilled 600M, int8 (in-process) |
 | Auth | JWT HS256, 24h expiry |
 | Video | WebRTC (browser-native, STUN only) |
 

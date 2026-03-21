@@ -42,6 +42,7 @@ export interface Message {
   source_lang: string
   target_lang: string
   created_at: string
+  translation_failed?: boolean
 }
 
 export const LANGUAGES = [

@@ -159,6 +159,9 @@ function MessageBubble({ msg, isOwn }: { msg: Message; isOwn: boolean }) {
         }`}
       >
         <p>{displayText}</p>
+        {!isOwn && msg.translation_failed && (
+          <p className="text-[10px] mt-0.5 text-yellow-500">translation unavailable</p>
+        )}
         <p className={`text-[10px] mt-1 ${isOwn ? 'text-indigo-200 text-right' : 'text-gray-500'}`}>
           {formatTime(msg.created_at)}
         </p>

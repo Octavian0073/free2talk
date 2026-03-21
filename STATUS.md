@@ -3,7 +3,7 @@
 ## Current Phase: Phase 5 — Polish & Stability (in progress)
 ## Last Completed Phase: Phase 4 — Live Translated Captions ✅
 
-## Last Session: 2026-03-19 (session 2)
+## Last Session: 2026-03-21 (session 3)
 
 ---
 
@@ -60,14 +60,17 @@
 
 ### Phase 4 — Live Translated Captions ✅ COMPLETE
 - [x] Python: ml-service scaffold (FastAPI, lifespan startup)
-- [x] Python: faster-whisper STT (small model, int8, pre-warm on startup, VAD filter)
+- [x] Python: faster-whisper STT (small model, int8, pre-warm on startup)
 - [x] Python: CTranslate2 + NLLB-200 distilled 600M (int8, all 6 lang pairs)
-- [x] Python: FFmpeg dependency for WebM/Opus demux (in Dockerfile)
+- [x] Python: ffmpeg dependency for WAV audio decoding
 - [x] Python: download_models.py — one-time NLLB conversion + tokenizer download
-- [x] Go: `GET /ws/audio` — JWT + friendship check before upgrade, binary chunk relay, caption delivery via Hub
+- [x] Go: `GET /ws/audio` — JWT + friendship check before upgrade, binary PCM relay, caption delivery via Hub
+- [x] Go: RMS energy VAD (`pcmRMS`), utterance accumulation, `makePCMWAV` WAV header wrapper
 - [x] Go: `internal/audio` package wired in main.go; ML_SERVICE_URL env var
-- [x] React: useAudioCapture hook (MediaRecorder 1.5s timeslice, init-segment prepend, binary WS)
+- [x] React: `audio-processor.js` AudioWorklet — 50ms chunks (800 samples), Float32→Int16, zero-copy transfer
+- [x] React: `useAudioCapture` hook — AudioContext 16kHz + AudioWorkletNode, sends raw Int16 binary WS
 - [x] React: CaptionOverlay component — rolling 2-line subtitle (new text appends to bottom line, promotes to top when full, clears after 5s silence)
+- [x] **AudioWorklet pipeline verified (2026-03-21):** captions appear in seconds, no end-chunk repetition ✅
 - [x] Both Go and TypeScript compile clean
 
 ### Phase 5 — Polish & Stability 🔄 IN PROGRESS
@@ -97,10 +100,18 @@
 - [x] LAN testing confirmed: phone + laptop on same WiFi, full call + captions working ✅
 - [x] Local test method established: `paplay --device=VirtualMic0 /tmp/speech.wav` via espeak-ng WAV for reliable silent audio injection
 
+#### Completed this session (2026-03-21 session 3) — AudioWorklet PCM Pipeline
+- [x] Replaced MediaRecorder with AudioWorklet (`public/audio-processor.js`) — isolated audio thread, 50ms raw PCM chunks at 16kHz
+- [x] `useAudioCapture.ts` rewritten — AudioContext (16kHz) + AudioWorkletNode, sends binary Int16 PCM over WS (no WebM, no init-chunk hack)
+- [x] `handler.go` rewritten — RMS energy VAD in Go (`pcmRMS`), utterance accumulation, `makePCMWAV` WAV header; no ffmpeg in browser path
+- [x] `ml-service/main.py` + `stt.py` restored to whisper+NLLB only (no Seamless)
+- [x] End-chunk repetition eliminated — Whisper now receives complete utterances
+- [x] Caption latency massively improved — text appears in ~1s after utterance ends
+
 #### Remaining Phase 5 tasks
+- [ ] Tune VAD thresholds (`speechRMSMin`, `silenceToFlush`) for different mic environments
 - [ ] Graceful degradation: translation failure → deliver original text with label
 - [ ] Graceful degradation: STT/caption failure → silent, no crash
-- [ ] README with full local setup instructions
 - [ ] Production build test (`npm run build`, verify no source exposure)
 
 ---
@@ -227,7 +238,9 @@ navigator.mediaDevices.getUserMedia = async () => {
 - Frontend: React 18 + TypeScript + Vite + Tailwind, port 5173
 - Database: PostgreSQL 16
 - Auth: JWT HS256, 24h expiry, is_admin NOT in token
-- Audio format for captions: WebM/Opus from MediaRecorder
+- Audio capture for captions: AudioWorklet (browser), raw Int16 PCM at 16 kHz, 50ms chunks over binary WS
+- VAD: Go RMS energy VAD (pure math, no ML) — utterance-complete before sending to Whisper
+- Audio format to ML service: WAV (RIFF header + raw Int16 PCM, constructed in Go)
 - Dev HTTPS: @vitejs/plugin-basic-ssl (self-signed, required for getUserMedia on LAN)
 
 ## Known Tech Debt

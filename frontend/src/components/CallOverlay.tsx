@@ -70,9 +70,9 @@ export default function CallOverlay({ callId, peerId, peerName, isInitiator, onE
         {/* Captions */}
         <CaptionOverlay />
 
-        {/* Local video — picture-in-picture, responsive size */}
+        {/* Local video — picture-in-picture, top-left so captions don't overlap */}
         {localStream && (
-          <div className="absolute bottom-3 right-3 w-24 h-18 md:w-36 md:h-27 rounded-xl overflow-hidden shadow-xl border border-gray-700 aspect-video">
+          <div className="absolute top-3 left-3 w-20 md:w-28 rounded-xl overflow-hidden shadow-xl border border-gray-700 aspect-[9/16]">
             <video
               ref={localVideoRef}
               autoPlay

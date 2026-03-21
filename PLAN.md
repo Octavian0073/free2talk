@@ -15,7 +15,7 @@ A real-time multilingual communication platform enabling voice/video calls and c
 ```
 Browser (React + TypeScript)
 ├── WebRTC peer connection       → video/audio directly peer-to-peer
-├── MediaRecorder → WebSocket   → audio chunks to backend for STT/translate
+├── AudioWorklet → WebSocket    → raw Int16 PCM (16kHz, 50ms chunks) to backend for STT/translate
 ├── WebSocket listener          → receives translated captions
 └── WebSocket listener          → receives chat messages (translated)
 
@@ -23,7 +23,7 @@ Go Backend (main server)
 ├── REST API     → auth, user profile, message history
 ├── WebSocket hub → chat messages, call signaling, caption events
 ├── WebRTC signaling → relay offer/answer/ICE between peers
-└── Audio relay  → receives chunks, POSTs to ML service, broadcasts captions
+└── Audio relay  → RMS VAD on PCM chunks, WAV-wraps complete utterance, POSTs to ML service, delivers caption to peer
 
 Python ML Microservice (internal)
 ├── faster-whisper (STT)        → EN/RO/JA speech → text
@@ -157,9 +157,11 @@ Tasks:
 - [x] Python: faster-whisper integration (load `small` model, transcribe audio chunk)
 - [x] Python: CTranslate2 + NLLB-200 distilled integration (translate text, detect direction from lang codes)
 - [x] Go: `/ws/audio` endpoint — receive binary audio chunks from browser, POST to ML service, receive transcript+translation, broadcast caption event to call room
-- [x] React: `useAudioCapture` hook — MediaRecorder, send 1.5s chunks over WebSocket
+- [x] React: `audio-processor.js` AudioWorklet — captures raw PCM Float32, converts to Int16, posts 50ms ArrayBuffers
+- [x] React: `useAudioCapture` hook — AudioContext (16kHz) + AudioWorkletNode, sends binary Int16 PCM over WebSocket
 - [x] React: `CaptionOverlay` component — displays translated captions over video, auto-fades old entries
-- [x] Bidirectional captions verified on LAN (phone + laptop, both directions)
+- [x] Bidirectional captions verified on LAN (phone + laptop, both directions) ✅
+- [x] AudioWorklet pipeline verified (2026-03-21): captions appear in ~1s, end-chunk repetition eliminated ✅
 
 ---
 
@@ -214,11 +216,14 @@ CREATE TABLE calls (
 
 | Step | Target |
 |---|---|
-| Audio chunk window | 1.5s |
+| VAD silence flush (12 × 50ms) | ~600ms after last syllable |
+| WAV header construction (Go) | <1ms |
 | faster-whisper `small` inference | ~250ms |
 | NLLB-200 translation | ~150ms |
 | WebSocket round-trip | ~50ms |
-| **Total caption delay** | **~2s** |
+| **Total caption delay** | **~1s after utterance ends** |
+
+Whisper receives the complete utterance rather than 500ms fragments — no end-chunk repetition, higher accuracy.
 
 ---
 
@@ -244,6 +249,6 @@ CREATE TABLE calls (
 
 - **English as translation pivot for 3-way calls (future):** A→B can go A_lang→en→B_lang if direct pair not available. NLLB-200 handles direct pairs, so pivot is not needed for MVP.
 - **No TURN server for MVP:** Peer-to-peer will fail on strict NATs. Add Coturn later if needed.
-- **Audio format:** Browser sends WebM/Opus. faster-whisper handles this natively.
+- **Audio capture:** Browser AudioWorklet sends raw Int16 PCM at 16 kHz. Go wraps it in a WAV header before forwarding to faster-whisper. No WebM/Opus container, no init-chunk complexity.
 - **Session security:** JWTs expire in 24h. No refresh tokens for MVP.
 - **LibreTranslate for chat, NLLB for captions:** LibreTranslate gives slightly better quality at the cost of HTTP overhead — fine for async chat. NLLB in-process is faster — required for real-time captions.

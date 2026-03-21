@@ -1,4 +1,13 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 fastapi>=0.111.0
 uvicorn[standard]>=0.30.1
-faster-whisper>=1.0.3
 python-multipart>=0.0.9
+faster-whisper>=1.0.3
+silero-vad>=5.1
+
+# SeamlessM4T v2 — STT + translation in one model pass
+# CPU version — change index URL to https://download.pytorch.org/whl/cu121 for GPU
+torch
+numpy
+transformers>=4.39.0

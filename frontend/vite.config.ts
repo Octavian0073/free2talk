@@ -4,6 +4,15 @@ import basicSsl from '@vitejs/plugin-basic-ssl'
 
 export default defineConfig({
   plugins: [react(), basicSsl()],
+  build: {
+    rollupOptions: {
+      onwarn(warning, warn) {
+        // Suppress missing-sourcemap warnings from third-party packages.
+        if (warning.code === 'SOURCEMAP_ERROR' || warning.message.includes('sourcemap')) return
+        warn(warning)
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     https: true,

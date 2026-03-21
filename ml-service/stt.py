@@ -1,6 +1,6 @@
 """
 Speech-to-text using faster-whisper (small model, CPU, int8).
-Accepts WebM/Opus audio bytes; returns a transcript string.
+Accepts WAV audio bytes; returns a transcript string.
 """
 
 import io
@@ -15,7 +15,6 @@ _model: WhisperModel | None = None
 
 
 def load() -> None:
-    """Load the Whisper model and pre-warm it to reduce first-request latency."""
     global _model
     cpu_threads = max(1, (os.cpu_count() or 4) // 2)
     _model = WhisperModel("small", device="cpu", compute_type="int8", cpu_threads=cpu_threads, num_workers=2)
@@ -23,7 +22,6 @@ def load() -> None:
 
 
 def _warmup() -> None:
-    """Transcribe 0.1 s of silence so the JIT is ready before real requests arrive."""
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
         wf.setnchannels(1)
@@ -35,26 +33,16 @@ def _warmup() -> None:
         f.write(buf.read())
         tmp = f.name
     try:
-        list(_model.transcribe(tmp, beam_size=1))  # type: ignore[union-attr]
+        list(_model.transcribe(tmp, beam_size=1))
     finally:
         os.unlink(tmp)
 
 
 def transcribe(audio_bytes: bytes, language: str) -> str:
-    """
-    Transcribe audio_bytes (WebM/Opus container) to text.
-
-    Args:
-        audio_bytes: Raw bytes of a self-contained WebM/Opus file.
-        language:    BCP-47 short code: 'en', 'ro', or 'ja'.
-
-    Returns:
-        Transcript string (empty string if no speech detected).
-    """
     if _model is None:
         raise RuntimeError("STT model not loaded — call stt.load() first")
 
-    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         f.write(audio_bytes)
         tmp = f.name
     try:
@@ -68,4 +56,7 @@ def transcribe(audio_bytes: bytes, language: str) -> str:
         )
         return " ".join(s.text.strip() for s in segments).strip()
     finally:
-        os.unlink(tmp)
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass

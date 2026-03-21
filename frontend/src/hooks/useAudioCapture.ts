@@ -1,108 +1,87 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 
 const WS_AUDIO_BASE = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/audio`
+
+// AudioWorklet processor script (served from public/).
+const WORKLET_URL = '/audio-processor.js'
+
+// Capture and transmit at 16 kHz — matches Whisper's expected sample rate.
+// The AudioContext resamples the microphone stream transparently.
+const SAMPLE_RATE = 16000
 
 interface UseAudioCaptureOptions {
   peerId: string
   localStream: MediaStream | null
-  enabled: boolean  // start capturing only when the call is active
+  enabled: boolean
 }
 
-/**
- * Streams 1.5-second WebM/Opus audio chunks to /ws/audio over a dedicated
- * binary WebSocket. The Go backend forwards each chunk to the ml-service for
- * STT + translation and delivers caption events to the peer via the main Hub.
- *
- * Each sent blob is a self-contained WebM file (init segment prepended) so
- * faster-whisper can decode it independently without container state.
- */
 export function useAudioCapture({ peerId, localStream, enabled }: UseAudioCaptureOptions) {
-  const wsRef       = useRef<WebSocket | null>(null)
-  const recorderRef = useRef<MediaRecorder | null>(null)
-  const initChunk   = useRef<Blob | null>(null)
-  const chunkIdx    = useRef(0)
+  const wsRef      = useRef<WebSocket | null>(null)
+  const ctxRef     = useRef<AudioContext | null>(null)
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
 
   const stopCapture = useCallback(() => {
-    if (recorderRef.current?.state === 'recording') {
-      recorderRef.current.stop()
-    }
-    recorderRef.current = null
+    if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null }
+    ctxRef.current?.close()
+    ctxRef.current = null
     wsRef.current?.close()
-    wsRef.current  = null
-    initChunk.current = null
-    chunkIdx.current  = 0
+    wsRef.current = null
   }, [])
 
   useEffect(() => {
-    console.log('[AudioCapture] effect run — enabled:', enabled, 'localStream:', localStream ? 'set' : 'null', 'peerId:', peerId)
     if (!enabled || !localStream || !peerId) return
 
     const token = localStorage.getItem('token')
     if (!token) return
 
-    const tracks = localStream.getAudioTracks()
-    console.log('[AudioCapture] audio tracks:', tracks.length, tracks.map(t => `${t.label}(${t.readyState})`))
+    const audioTracks = localStream.getAudioTracks()
+    if (audioTracks.length === 0) return
 
     const ws = new WebSocket(
       `${WS_AUDIO_BASE}?token=${encodeURIComponent(token)}&to_id=${encodeURIComponent(peerId)}`
     )
-    ws.binaryType = 'blob'
+    ws.binaryType = 'arraybuffer'
     wsRef.current = ws
 
     ws.onclose = (e) => {
-      console.warn('[AudioCapture] WS closed — code:', e.code, 'reason:', e.reason, 'wasClean:', e.wasClean)
+      const intentional = e.code === 1000 || e.code === 1005
+      if (!intentional && enabled && localStream && peerId) {
+        retryTimer.current = setTimeout(() => {
+          retryTimer.current = null
+          setRetryCount(c => c + 1)
+        }, 3000)
+      }
     }
 
-    ws.onopen = () => {
-      console.log('[AudioCapture] WS opened')
-      const audioTracks = localStream.getAudioTracks()
-      console.log('[AudioCapture] onopen audio tracks:', audioTracks.length, audioTracks.map(t => `${t.label}(${t.readyState})`))
-      if (audioTracks.length === 0) {
-        console.warn('[AudioCapture] no audio tracks — not starting recorder')
-        return
-      }
+    ws.onopen = async () => {
+      try {
+        const ctx = new AudioContext({ sampleRate: SAMPLE_RATE })
+        ctxRef.current = ctx
 
-      const audioStream = new MediaStream(audioTracks)
+        await ctx.audioWorklet.addModule(WORKLET_URL)
 
-      // iOS Safari does not support WebM — fall back to mp4.
-      // faster-whisper uses ffmpeg which auto-detects format from content,
-      // so the backend handles both formats without changes.
-      const mimeType = [
-        'audio/webm;codecs=opus',
-        'audio/webm',
-        'audio/mp4;codecs=mp4a.40.2',
-        'audio/mp4',
-      ].find(t => MediaRecorder.isTypeSupported(t))
+        const source  = ctx.createMediaStreamSource(new MediaStream(audioTracks))
+        const worklet = new AudioWorkletNode(ctx, 'audio-processor')
 
-      if (!mimeType) {
-        console.warn('[AudioCapture] No supported MediaRecorder format found on this device')
-        ws.close()
-        return
-      }
+        // Route worklet output through a silent gain node to keep the audio
+        // graph active in all browsers without playing anything audible.
+        const silence = ctx.createGain()
+        silence.gain.value = 0
+        worklet.connect(silence)
+        silence.connect(ctx.destination)
 
-      const recorder = new MediaRecorder(audioStream, { mimeType })
-      recorderRef.current = recorder
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size === 0) return
-
-        if (chunkIdx.current === 0) {
-          // First chunk contains the WebM container header — save as init segment.
-          initChunk.current = e.data
-        } else if (initChunk.current) {
-          // Subsequent chunks are not independently decodable, so prepend the
-          // init segment to produce a valid stand-alone WebM file each time.
-          const blob = new Blob([initChunk.current, e.data], { type: mimeType })
+        worklet.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
           if (ws.readyState === WebSocket.OPEN) {
-            ws.send(blob)
+            ws.send(e.data)
           }
         }
-        chunkIdx.current++
+
+        source.connect(worklet)
+      } catch (err) {
+        console.error('[AudioCapture] AudioWorklet init failed:', err)
+        ws.close()
       }
-
-      recorder.onerror = (e) => { console.error('[AudioCapture] recorder error:', e); stopCapture() }
-
-      recorder.start(1500) // emit a chunk every 1.5 seconds
     }
 
     ws.onerror = (e) => {
@@ -110,9 +89,6 @@ export function useAudioCapture({ peerId, localStream, enabled }: UseAudioCaptur
       ws.close()
     }
 
-    return () => {
-      console.log('[AudioCapture] cleanup — closing WS')
-      stopCapture()
-    }
-  }, [enabled, localStream, peerId, stopCapture])
+    return () => stopCapture()
+  }, [enabled, localStream, peerId, stopCapture, retryCount])
 }
