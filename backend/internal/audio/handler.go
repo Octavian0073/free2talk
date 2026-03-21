@@ -12,6 +12,8 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	"free2talk/backend/internal/auth"
@@ -29,6 +31,61 @@ var prodOrigins = map[string]bool{
 	"https://localhost:3000": true,
 }
 
+// VADConfig holds tunable voice-activity-detection thresholds.
+// All fields have sensible defaults; see DefaultVADConfig and NewVADConfigFromEnv.
+type VADConfig struct {
+	SpeechRMSMin    float64 // RMS energy threshold — below = silence (default 0.015)
+	SilenceToFlush  int     // consecutive silent 50ms chunks before finalising utterance (default 12 → ~600ms)
+	MinSpeechFrames int     // minimum speech frames to avoid noise triggers (default 3 → ~150ms)
+	MaxSpeechFrames int     // hard cap to prevent buffer growth (default 200 → ~10s)
+}
+
+// DefaultVADConfig returns conservative defaults that work well in quiet environments.
+func DefaultVADConfig() VADConfig {
+	return VADConfig{
+		SpeechRMSMin:    0.015,
+		SilenceToFlush:  12,
+		MinSpeechFrames: 3,
+		MaxSpeechFrames: 200,
+	}
+}
+
+// NewVADConfigFromEnv reads VAD_SPEECH_RMS_MIN, VAD_SILENCE_FRAMES,
+// VAD_MIN_SPEECH_FRAMES, VAD_MAX_SPEECH_FRAMES from the environment,
+// falling back to DefaultVADConfig for any value that is absent or unparseable.
+func NewVADConfigFromEnv() VADConfig {
+	cfg := DefaultVADConfig()
+	if v := getenvFloat("VAD_SPEECH_RMS_MIN"); v > 0 {
+		cfg.SpeechRMSMin = v
+	}
+	if v := getenvInt("VAD_SILENCE_FRAMES"); v > 0 {
+		cfg.SilenceToFlush = v
+	}
+	if v := getenvInt("VAD_MIN_SPEECH_FRAMES"); v > 0 {
+		cfg.MinSpeechFrames = v
+	}
+	if v := getenvInt("VAD_MAX_SPEECH_FRAMES"); v > 0 {
+		cfg.MaxSpeechFrames = v
+	}
+	return cfg
+}
+
+func getenvFloat(key string) float64 {
+	v, err := strconv.ParseFloat(os.Getenv(key), 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+func getenvInt(key string) int {
+	v, err := strconv.Atoi(os.Getenv(key))
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
 // Handler holds dependencies for the audio WebSocket endpoint.
 type Handler struct {
 	DB       *pgxpool.Pool
@@ -36,6 +93,7 @@ type Handler struct {
 	MLURL    string
 	MLClient *http.Client
 	DevMode  bool
+	VAD      VADConfig
 }
 
 func (h *Handler) upgrader() *websocket.Upgrader {
@@ -75,11 +133,7 @@ type mlResponse struct {
 }
 
 const (
-	pcmSampleRate   = 16000 // must match AudioContext sampleRate in the browser
-	speechRMSMin    = 0.015 // RMS energy threshold — below = silence
-	silenceToFlush  = 12   // silent 50 ms chunks before finalising (~600 ms)
-	minSpeechFrames = 3    // minimum speech frames to avoid noise triggers (~150 ms)
-	maxSpeechFrames = 200  // hard cap to prevent buffer growth (~10 s)
+	pcmSampleRate = 16000 // must match AudioContext sampleRate in the browser
 )
 
 // pcmRMS computes the root-mean-square energy of a raw Int16 LE PCM buffer.
@@ -235,7 +289,7 @@ func (h *Handler) ServeAudioWS(w http.ResponseWriter, r *http.Request) {
 		}
 
 		flush := func() {
-			if speechCount < minSpeechFrames {
+			if speechCount < h.VAD.MinSpeechFrames {
 				// Too short — discard noise burst.
 				speechBuf = nil
 				speechCount = 0
@@ -263,19 +317,19 @@ func (h *Handler) ServeAudioWS(w http.ResponseWriter, r *http.Request) {
 		for chunk := range chunkCh {
 			energy := pcmRMS(chunk)
 
-			if energy >= speechRMSMin {
+			if energy >= h.VAD.SpeechRMSMin {
 				// Active speech — accumulate.
 				speechBuf = append(speechBuf, chunk...)
 				speechCount++
 				silenceCnt = 0
-				if speechCount >= maxSpeechFrames {
+				if speechCount >= h.VAD.MaxSpeechFrames {
 					flush()
 				}
 			} else if speechCount > 0 {
 				// Trailing silence after speech — keep buffering briefly.
 				speechBuf = append(speechBuf, chunk...)
 				silenceCnt++
-				if silenceCnt >= silenceToFlush {
+				if silenceCnt >= h.VAD.SilenceToFlush {
 					flush()
 				}
 			}

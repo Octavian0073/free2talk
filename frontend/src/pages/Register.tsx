@@ -12,6 +12,7 @@ export default function Register() {
     username: '',
     display_name: '',
     language_code: 'en',
+    registration_key: '',
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -44,6 +45,18 @@ export default function Register() {
           {error && (
             <p className="text-red-400 text-sm bg-red-900/20 rounded-lg px-3 py-2">{error}</p>
           )}
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Registration key</label>
+            <input
+              type="password"
+              value={form.registration_key}
+              onChange={e => set('registration_key', e.target.value)}
+              required
+              className="w-full bg-gray-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500"
+              placeholder="Enter your invite key"
+            />
+          </div>
 
           <div>
             <label className="block text-sm text-gray-400 mb-1">Display name</label>

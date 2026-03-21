@@ -17,7 +17,7 @@ _model: WhisperModel | None = None
 def load() -> None:
     global _model
     cpu_threads = max(1, (os.cpu_count() or 4) // 2)
-    _model = WhisperModel("small", device="cpu", compute_type="int8", cpu_threads=cpu_threads, num_workers=2)
+    _model = WhisperModel("large-v3", device="cuda", compute_type="float16", num_workers=2)
     _warmup()
 
 

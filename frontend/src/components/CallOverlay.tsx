@@ -57,7 +57,8 @@ export default function CallOverlay({ callId, peerId, peerName, isInitiator, onE
             ref={remoteVideoRef}
             autoPlay
             playsInline
-            className="w-full h-full object-cover"
+            disablePictureInPicture
+            className="w-full h-full object-cover [&::-webkit-media-controls]{display:none}"
           />
         ) : (
           <div className="flex flex-col items-center gap-4">
@@ -82,7 +83,8 @@ export default function CallOverlay({ callId, peerId, peerName, isInitiator, onE
               autoPlay
               playsInline
               muted
-              className="w-full h-full object-cover"
+              disablePictureInPicture
+              className="w-full h-full object-cover [&::-webkit-media-controls]{display:none}"
             />
           </div>
         )}

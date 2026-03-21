@@ -41,7 +41,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	authHandler := &auth.Handler{DB: pool}
+	authHandler := &auth.Handler{DB: pool, RegistrationKey: os.Getenv("REGISTRATION_KEY")}
 	userHandler := &user.Handler{DB: pool}
 	adminHandler := &admin.Handler{DB: pool}
 
@@ -76,7 +76,8 @@ func main() {
 	// When using a Unix socket the URL host is ignored by the custom dialer,
 	// so "http://localhost" is just a placeholder that satisfies http.Request.
 	mlClient := audio.NewMLClient(mlSocketPath)
-	audioHandler := &audio.Handler{DB: pool, Hub: hub, MLURL: mlURL, MLClient: mlClient, DevMode: devMode}
+	vadCfg := audio.NewVADConfigFromEnv()
+	audioHandler := &audio.Handler{DB: pool, Hub: hub, MLURL: mlURL, MLClient: mlClient, DevMode: devMode, VAD: vadCfg}
 
 	var corsOrigins []string
 	if devMode {

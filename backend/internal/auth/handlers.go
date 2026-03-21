@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"regexp"
@@ -17,7 +18,8 @@ import (
 var usernameRe = regexp.MustCompile(`^[a-z0-9_]{3,20}$`)
 
 type Handler struct {
-	DB *pgxpool.Pool
+	DB              *pgxpool.Pool
+	RegistrationKey string // if non-empty, every register request must supply it
 }
 
 // registerRequest contains ONLY the fields a client is allowed to supply.
@@ -25,11 +27,12 @@ type Handler struct {
 // default (false) and the admin-only ToggleAdmin endpoint. No client path
 // can elevate privileges at registration time.
 type registerRequest struct {
-	Email        string `json:"email"`
-	Password     string `json:"password"`
-	Username     string `json:"username"`
-	DisplayName  string `json:"display_name"`
-	LanguageCode string `json:"language_code"`
+	Email           string `json:"email"`
+	Password        string `json:"password"`
+	Username        string `json:"username"`
+	DisplayName     string `json:"display_name"`
+	LanguageCode    string `json:"language_code"`
+	RegistrationKey string `json:"registration_key"`
 }
 
 type loginRequest struct {
@@ -67,6 +70,15 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if !decodeBody(w, r, &req) {
 		return
+	}
+
+	// Check registration key before doing any other work.
+	// Constant-time comparison prevents timing-based key enumeration.
+	if h.RegistrationKey != "" {
+		if subtle.ConstantTimeCompare([]byte(req.RegistrationKey), []byte(h.RegistrationKey)) != 1 {
+			http.Error(w, "invalid registration key", http.StatusForbidden)
+			return
+		}
 	}
 
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
