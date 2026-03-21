@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { LANGUAGES } from '../types'
 import type { PublicUser, Message } from '../types'
@@ -20,22 +21,45 @@ interface ActiveCall {
 export default function ChatApp() {
   const { user, logout } = useAuth()
   const [friends, setFriends] = useState<PublicUser[]>([])
+  const [friendsLoading, setFriendsLoading] = useState(true)
   const [selectedContact, setSelectedContact] = useState<PublicUser | null>(null)
   const [messageMap, setMessageMap] = useState<Record<string, Message[]>>({})
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null)
   const lang = LANGUAGES.find(l => l.code === user?.language_code)
 
+  // Ref so that handleIncomingMessage (stable useCallback) can read the
+  // latest selected contact without being re-created on every selection change.
+  const selectedContactRef = useRef<PublicUser | null>(null)
+  useEffect(() => { selectedContactRef.current = selectedContact }, [selectedContact])
+
   const loadFriends = useCallback(() => {
-    api.getFriends().then(setFriends).catch(console.error)
+    setFriendsLoading(true)
+    api.getFriends()
+      .then(setFriends)
+      .catch(console.error)
+      .finally(() => setFriendsLoading(false))
   }, [])
 
   useEffect(() => { loadFriends() }, [loadFriends])
+
+  // Re-fetch when the user returns to the tab — handles cases where the
+  // initial load failed silently (transient network error on page refresh).
+  useEffect(() => {
+    const onFocus = () => loadFriends()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [loadFriends])
 
   const handleIncomingMessage = useCallback((msg: Message) => {
     setMessageMap(prev => ({
       ...prev,
       [msg.sender_id]: [...(prev[msg.sender_id] ?? []), msg],
     }))
+    // Increment unread only when the conversation with this sender is not open.
+    if (msg.sender_id !== selectedContactRef.current?.id) {
+      setUnreadCounts(prev => ({ ...prev, [msg.sender_id]: (prev[msg.sender_id] ?? 0) + 1 }))
+    }
   }, [])
 
   useWebSocket({ onMessage: handleIncomingMessage, enabled: !!user })
@@ -64,6 +88,16 @@ export default function ChatApp() {
     api.endCall(incoming.callId).catch(() => {})
   }, [])
 
+  const handleSelectContact = useCallback((contact: PublicUser) => {
+    setSelectedContact(contact)
+    setUnreadCounts(prev => ({ ...prev, [contact.id]: 0 }))
+  }, [])
+
+  const handleUnfriend = useCallback((contactId: string) => {
+    setFriends(prev => prev.filter(f => f.id !== contactId))
+    setSelectedContact(null)
+  }, [])
+
   // On mobile the layout is single-panel: sidebar when no contact selected,
   // conversation pane when a contact is selected.
   const showSidebar   = !selectedContact
@@ -82,8 +116,8 @@ export default function ChatApp() {
       `}>
         {/* Profile bar */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center text-sm font-semibold select-none">
+          <Link to="/profile" className="flex items-center gap-3 rounded-lg hover:bg-gray-800 px-1 py-0.5 transition-colors group">
+            <div className="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center text-sm font-semibold select-none group-hover:bg-indigo-500 transition-colors">
               {user?.display_name?.[0]?.toUpperCase()}
             </div>
             <div>
@@ -92,7 +126,7 @@ export default function ChatApp() {
                 @{user?.username} · {lang?.flag} {lang?.label}
               </p>
             </div>
-          </div>
+          </Link>
           <button
             onClick={logout}
             title="Sign out"
@@ -104,8 +138,10 @@ export default function ChatApp() {
 
         <ConversationSidebar
           friends={friends}
+          friendsLoading={friendsLoading}
           selectedId={selectedContact?.id ?? null}
-          onSelect={setSelectedContact}
+          unreadCounts={unreadCounts}
+          onSelect={handleSelectContact}
           onFriendAccepted={loadFriends}
         />
       </aside>
@@ -129,6 +165,7 @@ export default function ChatApp() {
             }
             onCallStart={handleCallStart}
             onBack={() => setSelectedContact(null)}
+            onUnfriend={handleUnfriend}
           />
         ) : (
           <EmptyState />

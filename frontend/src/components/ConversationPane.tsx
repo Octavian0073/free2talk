@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { PublicUser, User, Message } from '../types'
 import { LANGUAGES } from '../types'
 import { api } from '../api/client'
+import EmojiPicker from './EmojiPicker'
 
 interface Props {
   contact: PublicUser
@@ -10,7 +11,8 @@ interface Props {
   onMessageSent: (msg: Message) => void
   onHistoryLoaded: (msgs: Message[]) => void
   onCallStart: (call: { callId: string; peerId: string; peerName: string; isInitiator: boolean }) => void
-  onBack: () => void   // navigates back to sidebar on mobile
+  onBack: () => void
+  onUnfriend: (contactId: string) => void
 }
 
 export default function ConversationPane({
@@ -21,11 +23,17 @@ export default function ConversationPane({
   onHistoryLoaded,
   onCallStart,
   onBack,
+  onUnfriend,
 }: Props) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [showContactMenu, setShowContactMenu] = useState(false)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [unfriending, setUnfriending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const contactMenuRef = useRef<HTMLDivElement>(null)
 
   const contactLang = LANGUAGES.find(l => l.code === contact.language_code)
   const myLang = LANGUAGES.find(l => l.code === currentUser.language_code)
@@ -42,6 +50,18 @@ export default function ConversationPane({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length])
 
+  // Close contact menu on outside click.
+  useEffect(() => {
+    if (!showContactMenu) return
+    const handler = (e: MouseEvent) => {
+      if (contactMenuRef.current && !contactMenuRef.current.contains(e.target as Node)) {
+        setShowContactMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showContactMenu])
+
   const handleSend = async () => {
     const trimmed = text.trim()
     if (!trimmed || sending) return
@@ -54,6 +74,7 @@ export default function ConversationPane({
       console.error('send failed:', err)
     } finally {
       setSending(false)
+      setTimeout(() => inputRef.current?.focus(), 0)
     }
   }
 
@@ -64,43 +85,88 @@ export default function ConversationPane({
     }
   }
 
+  const handleEmojiSelect = (emoji: string) => {
+    setText(prev => prev + emoji)
+    setShowEmojiPicker(false)
+    inputRef.current?.focus()
+  }
+
+  const handleUnfriend = async () => {
+    setUnfriending(true)
+    try {
+      await api.unfriendUser(contact.id)
+      onUnfriend(contact.id)
+    } catch (err) {
+      console.error('unfriend failed:', err)
+      setUnfriending(false)
+    }
+  }
+
   return (
     <div className="flex flex-col h-full bg-gray-900">
+
       {/* Header */}
-      <div className="flex items-center gap-3 px-3 py-3 border-b border-gray-800 flex-shrink-0">
-        {/* Back button — mobile only */}
-        <button
-          onClick={onBack}
-          className="md:hidden flex-shrink-0 text-gray-400 hover:text-white p-2 -ml-1 rounded-lg transition-colors"
-          title="Back"
-        >
-          <BackIcon />
-        </button>
+      <div className="relative flex-shrink-0" ref={contactMenuRef}>
+        <div className="flex items-center gap-3 px-3 py-3 border-b border-gray-800">
 
-        <div className="w-9 h-9 rounded-full bg-indigo-700 flex items-center justify-center text-sm font-semibold select-none flex-shrink-0">
-          {contact.display_name[0].toUpperCase()}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{contact.display_name}</p>
-          <p className="text-xs text-gray-500 truncate">
-            {contactLang?.flag} {contactLang?.label} &rarr; you see {myLang?.label}
-          </p>
+          {/* Back button — mobile only */}
+          <button
+            onClick={onBack}
+            className="md:hidden flex-shrink-0 text-gray-400 hover:text-white p-2 -ml-1 rounded-lg transition-colors"
+            title="Back"
+          >
+            <BackIcon />
+          </button>
+
+          {/* Contact info — clickable to open menu */}
+          <button
+            onClick={() => setShowContactMenu(v => !v)}
+            className="flex items-center gap-3 flex-1 min-w-0 text-left rounded-lg hover:bg-gray-800 px-1 py-0.5 transition-colors"
+          >
+            <div className="w-9 h-9 rounded-full bg-indigo-700 flex items-center justify-center text-sm font-semibold select-none flex-shrink-0">
+              {contact.display_name[0].toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{contact.display_name}</p>
+              <p className="text-xs text-gray-500 truncate">
+                {contactLang?.flag} {contactLang?.label} &rarr; you see {myLang?.label}
+              </p>
+            </div>
+            <ChevronIcon open={showContactMenu} />
+          </button>
+
+          {/* Video call button */}
+          <button
+            onClick={async () => {
+              try {
+                const { call_id } = await api.initiateCall(contact.id)
+                onCallStart({ callId: call_id, peerId: contact.id, peerName: contact.display_name, isInitiator: true })
+              } catch (err) {
+                console.error('call failed to start:', err)
+              }
+            }}
+            title="Start video call"
+            className="flex-shrink-0 text-gray-400 hover:text-white p-2 rounded-lg transition-colors"
+          >
+            <VideoIcon />
+          </button>
         </div>
 
-        <button
-          onClick={async () => {
-            try {
-              const { call_id } = await api.initiateCall(contact.id)
-              onCallStart({ callId: call_id, peerId: contact.id, peerName: contact.display_name, isInitiator: true })
-            } catch (err) {
-              console.error('call failed to start:', err)
-            }
-          }}
-          title="Start video call"
-          className="flex-shrink-0 text-gray-400 hover:text-white p-2 rounded-lg transition-colors"
-        >
-          <VideoIcon />
-        </button>
+        {/* Contact action menu */}
+        {showContactMenu && (
+          <div className="absolute top-full left-0 right-0 bg-gray-850 border-b border-gray-700 shadow-lg z-10 bg-gray-900">
+            <div className="px-4 py-2">
+              <button
+                onClick={handleUnfriend}
+                disabled={unfriending}
+                className="flex items-center gap-2 w-full text-left text-sm text-red-400 hover:text-red-300 hover:bg-gray-800 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <UnfriendIcon />
+                {unfriending ? 'Removing…' : `Unfriend ${contact.display_name}`}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Message area */}
@@ -125,7 +191,25 @@ export default function ConversationPane({
 
       {/* Input bar */}
       <div className="flex items-center gap-2 px-3 py-3 border-t border-gray-800 flex-shrink-0">
+        {/* Emoji button */}
+        <div className="relative flex-shrink-0">
+          <button
+            onClick={() => setShowEmojiPicker(v => !v)}
+            title="Emoji"
+            className="text-gray-400 hover:text-yellow-400 p-2 rounded-lg transition-colors text-lg leading-none"
+          >
+            😊
+          </button>
+          {showEmojiPicker && (
+            <EmojiPicker
+              onSelect={handleEmojiSelect}
+              onClose={() => setShowEmojiPicker(false)}
+            />
+          )}
+        </div>
+
         <input
+          ref={inputRef}
           type="text"
           value={text}
           onChange={e => setText(e.target.value)}
@@ -186,6 +270,22 @@ function VideoIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9A2.25 2.25 0 0013.5 5.25h-9A2.25 2.25 0 002.25 7.5v9A2.25 2.25 0 004.5 18.75z" />
+    </svg>
+  )
+}
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} className={`flex-shrink-0 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+    </svg>
+  )
+}
+
+function UnfriendIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M22 10H16M9 11a4 4 0 100-8 4 4 0 000 8zm-7 9a7 7 0 0114 0H2z" />
     </svg>
   )
 }

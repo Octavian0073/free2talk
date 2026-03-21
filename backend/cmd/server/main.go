@@ -115,6 +115,7 @@ func main() {
 		r.Use(mw.Auth(pool))
 		r.Get("/api/user/me", userHandler.GetMe)
 		r.Put("/api/user/language", userHandler.UpdateLanguage)
+		r.Put("/api/user/profile", userHandler.UpdateProfile)
 	})
 
 	// Phase 2: chat routes.
@@ -134,6 +135,7 @@ func main() {
 		r.Get("/api/friends/requests", friendsHandler.ListRequests)
 		r.Post("/api/friends/request", friendsHandler.SendRequest)
 		r.Post("/api/friends/accept/{id}", friendsHandler.AcceptRequest)
+		r.Delete("/api/friends/user/{user_id}", friendsHandler.RemoveByUser)
 		r.Delete("/api/friends/{id}", friendsHandler.DeclineOrRemove)
 		// Phase 3: calls
 		r.Post("/api/calls", callHandler.InitiateCall)

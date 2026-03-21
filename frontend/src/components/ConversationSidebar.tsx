@@ -5,17 +5,20 @@ import { api } from '../api/client'
 
 interface Props {
   friends: PublicUser[]
+  friendsLoading: boolean
   selectedId: string | null
+  unreadCounts: Record<string, number>
   onSelect: (c: PublicUser) => void
   onFriendAccepted: () => void
 }
 
-export default function ConversationSidebar({ friends, selectedId, onSelect, onFriendAccepted }: Props) {
+export default function ConversationSidebar({ friends, friendsLoading, selectedId, unreadCounts, onSelect, onFriendAccepted }: Props) {
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
   const [requests, setRequests] = useState<IncomingRequest[]>([])
   const [showRequests, setShowRequests] = useState(false)
+  const [pendingUsernames, setPendingUsernames] = useState<Set<string>>(new Set())
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Load incoming friend requests on mount.
@@ -45,13 +48,22 @@ export default function ConversationSidebar({ friends, selectedId, onSelect, onF
   }, [query])
 
   const handleAddFriend = async (username: string) => {
+    // Optimistic update — button shows "Requested" immediately.
+    setPendingUsernames(prev => new Set([...prev, username]))
     try {
       await api.sendFriendRequest(username)
-      // Refresh search results to show updated status.
+    } catch (err) {
+      // Roll back optimistic state only if the request itself failed.
+      setPendingUsernames(prev => { const s = new Set(prev); s.delete(username); return s })
+      console.error('friend request failed:', err)
+      return
+    }
+    // Refresh results after success — errors here don't affect the button state.
+    try {
       const res = await api.searchUsers(query.trim())
       setSearchResults(res)
-    } catch (err) {
-      console.error('friend request failed:', err)
+    } catch {
+      // silently ignore
     }
   }
 
@@ -149,7 +161,11 @@ export default function ConversationSidebar({ friends, selectedId, onSelect, onF
                   <p className="text-sm font-medium truncate">{result.display_name}</p>
                   <p className="text-xs text-gray-500">@{result.username} · {lang?.flag}</p>
                 </div>
-                <FriendActionButton status={result.friend_status} username={result.username} onAdd={handleAddFriend} />
+                <FriendActionButton
+                  status={pendingUsernames.has(result.username) ? 'pending_sent' : result.friend_status}
+                  username={result.username}
+                  onAdd={handleAddFriend}
+                />
               </li>
             )
           })}
@@ -157,7 +173,9 @@ export default function ConversationSidebar({ friends, selectedId, onSelect, onF
       ) : (
         /* Friends list */
         <ul className="flex-1 overflow-y-auto">
-          {friends.length === 0 ? (
+          {friendsLoading && friends.length === 0 ? (
+            <li className="px-4 py-6 text-xs text-gray-600 text-center">Loading…</li>
+          ) : friends.length === 0 ? (
             <li className="flex flex-col items-center justify-center text-center px-6 py-10 gap-2">
               <p className="text-gray-600 text-sm">No friends yet.</p>
               <p className="text-gray-700 text-xs">Search by @username above to add friends.</p>
@@ -166,6 +184,7 @@ export default function ConversationSidebar({ friends, selectedId, onSelect, onF
             friends.map(friend => {
               const lang = LANGUAGES.find(l => l.code === friend.language_code)
               const active = friend.id === selectedId
+              const unread = unreadCounts[friend.id] ?? 0
               return (
                 <li key={friend.id}>
                   <button
@@ -174,13 +193,29 @@ export default function ConversationSidebar({ friends, selectedId, onSelect, onF
                       active ? 'bg-gray-800' : ''
                     }`}
                   >
-                    <div className="w-10 h-10 rounded-full bg-indigo-700 flex items-center justify-center text-sm font-semibold select-none flex-shrink-0">
-                      {friend.display_name[0].toUpperCase()}
+                    {/* Avatar with unread dot */}
+                    <div className="relative flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-indigo-700 flex items-center justify-center text-sm font-semibold select-none">
+                        {friend.display_name[0].toUpperCase()}
+                      </div>
+                      {unread > 0 && !active && (
+                        <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-indigo-400 rounded-full border-2 border-gray-900" />
+                      )}
                     </div>
+
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{friend.display_name}</p>
+                      <p className={`text-sm truncate ${unread > 0 && !active ? 'font-bold text-white' : 'font-medium'}`}>
+                        {friend.display_name}
+                      </p>
                       <p className="text-xs text-gray-500 truncate">@{friend.username} · {lang?.flag} {lang?.label}</p>
                     </div>
+
+                    {/* Unread count badge */}
+                    {unread > 0 && !active && (
+                      <span className="flex-shrink-0 min-w-[20px] h-5 bg-indigo-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center px-1.5">
+                        {unread > 99 ? '99+' : unread}
+                      </span>
+                    )}
                   </button>
                 </li>
               )
@@ -203,7 +238,7 @@ function FriendActionButton({ status, username, onAdd }: FriendActionButtonProps
     return <span className="text-xs text-gray-500">Friends</span>
   }
   if (status === 'pending_sent') {
-    return <span className="text-xs text-gray-500">Pending</span>
+    return <span className="text-xs text-indigo-400 bg-indigo-950 px-2 py-1 rounded-full">Requested</span>
   }
   if (status === 'pending_received') {
     return <span className="text-xs text-indigo-400">Check requests</span>

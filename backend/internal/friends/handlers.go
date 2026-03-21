@@ -262,6 +262,36 @@ func (h *Handler) DeclineOrRemove(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// RemoveByUser handles DELETE /api/friends/user/{user_id}
+// Removes an accepted (or pending) friendship between the caller and the given user.
+// The frontend uses this when unfriending from the conversation view, where only the
+// peer's user ID is available — not the internal friendship row ID.
+func (h *Handler) RemoveByUser(w http.ResponseWriter, r *http.Request) {
+	callerID := mw.GetUserID(r)
+	peerID := chi.URLParam(r, "user_id")
+	if err := validate.UUID(peerID); err != nil {
+		http.Error(w, "invalid user_id", http.StatusBadRequest)
+		return
+	}
+	if peerID == callerID {
+		http.Error(w, "cannot unfriend yourself", http.StatusBadRequest)
+		return
+	}
+
+	ct, err := h.DB.Exec(context.Background(), `
+		DELETE FROM friendships
+		WHERE (sender_id = $1::uuid AND receiver_id = $2::uuid)
+		   OR (sender_id = $2::uuid AND receiver_id = $1::uuid)`,
+		callerID, peerID,
+	)
+	if err != nil || ct.RowsAffected() == 0 {
+		http.Error(w, "friendship not found", http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ListFriends handles GET /api/friends
 // Returns accepted friends for the sidebar.
 func (h *Handler) ListFriends(w http.ResponseWriter, r *http.Request) {

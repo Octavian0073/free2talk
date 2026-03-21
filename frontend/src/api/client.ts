@@ -58,6 +58,12 @@ export const api = {
   declineOrRemoveFriend: (friendshipId: string) =>
     request<void>(`/friends/${friendshipId}`, { method: 'DELETE' }),
 
+  unfriendUser: (userId: string) =>
+    request<void>(`/friends/user/${userId}`, { method: 'DELETE' }),
+
+  updateProfile: (body: { display_name: string; email: string; language_code: string; password: string }) =>
+    request<User>('/user/profile', { method: 'PUT', body: JSON.stringify(body) }),
+
   // Phase 3 — calls
   initiateCall: (callee_id: string) =>
     request<{ call_id: string }>('/calls', { method: 'POST', body: JSON.stringify({ callee_id }) }),
