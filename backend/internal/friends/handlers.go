@@ -4,6 +4,7 @@ package friends
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -14,8 +15,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Notifier is the subset of the Hub interface used by this package.
+// Using an interface avoids an import cycle with the chat package.
+type Notifier interface {
+	Deliver(userID string, msg []byte)
+}
+
 type Handler struct {
-	DB *pgxpool.Pool
+	DB  *pgxpool.Pool
+	Hub Notifier // optional — nil disables push notifications
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -234,6 +242,18 @@ func (h *Handler) AcceptRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Notify the original sender that their request was accepted so their
+	// friends list updates in real time without requiring a page refresh.
+	if h.Hub != nil {
+		var senderID string
+		h.DB.QueryRow(context.Background(),
+			`SELECT sender_id::text FROM friendships WHERE id = $1::uuid`, friendshipID,
+		).Scan(&senderID)
+		if senderID != "" {
+			h.Hub.Deliver(senderID, []byte(`{"type":"friend_accepted"}`))
+		}
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -284,7 +304,13 @@ func (h *Handler) RemoveByUser(w http.ResponseWriter, r *http.Request) {
 		   OR (sender_id = $2::uuid AND receiver_id = $1::uuid)`,
 		callerID, peerID,
 	)
-	if err != nil || ct.RowsAffected() == 0 {
+	if err != nil {
+		log.Printf("RemoveByUser: DB error callerID=%q peerID=%q err=%v", callerID, peerID, err)
+		http.Error(w, "friendship not found", http.StatusNotFound)
+		return
+	}
+	if ct.RowsAffected() == 0 {
+		log.Printf("RemoveByUser: 0 rows affected callerID=%q peerID=%q", callerID, peerID)
 		http.Error(w, "friendship not found", http.StatusNotFound)
 		return
 	}

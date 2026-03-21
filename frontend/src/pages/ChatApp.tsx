@@ -5,6 +5,7 @@ import { LANGUAGES } from '../types'
 import type { PublicUser, Message } from '../types'
 import { api } from '../api/client'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useWebSocketContext, useWebSocketEvent } from '../context/WebSocketContext'
 import ConversationSidebar from '../components/ConversationSidebar'
 import ConversationPane from '../components/ConversationPane'
 import IncomingCallModal from '../components/IncomingCallModal'
@@ -20,6 +21,7 @@ interface ActiveCall {
 
 export default function ChatApp() {
   const { user, logout } = useAuth()
+  const { send } = useWebSocketContext()
   const [friends, setFriends] = useState<PublicUser[]>([])
   const [friendsLoading, setFriendsLoading] = useState(true)
   const [selectedContact, setSelectedContact] = useState<PublicUser | null>(null)
@@ -42,6 +44,9 @@ export default function ChatApp() {
   }, [])
 
   useEffect(() => { loadFriends() }, [loadFriends])
+
+  // Refresh friends list when the server notifies us that our request was accepted.
+  useWebSocketEvent('friend_accepted', useCallback(() => { loadFriends() }, [loadFriends]))
 
   // Re-fetch when the user returns to the tab — handles cases where the
   // initial load failed silently (transient network error on page refresh).
@@ -85,8 +90,9 @@ export default function ChatApp() {
   }, [])
 
   const handleDeclineCall = useCallback((incoming: IncomingCall) => {
+    send({ type: 'call_reject', to: incoming.fromId, call_id: incoming.callId })
     api.endCall(incoming.callId).catch(() => {})
-  }, [])
+  }, [send])
 
   const handleSelectContact = useCallback((contact: PublicUser) => {
     setSelectedContact(contact)
@@ -95,7 +101,7 @@ export default function ChatApp() {
 
   const handleUnfriend = useCallback((contactId: string) => {
     setFriends(prev => prev.filter(f => f.id !== contactId))
-    setSelectedContact(null)
+    // Don't close the pane — ConversationPane shows "Add back" in place of "Unfriend"
   }, [])
 
   // On mobile the layout is single-panel: sidebar when no contact selected,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useWebSocketEvent } from '../context/WebSocketContext'
+import { useWebSocketContext, useWebSocketEvent } from '../context/WebSocketContext'
 
 export interface IncomingCall {
   callId: string
@@ -13,6 +13,7 @@ interface Props {
 }
 
 export default function IncomingCallModal({ onAccept, onDecline }: Props) {
+  const { send } = useWebSocketContext()
   const [incoming, setIncoming] = useState<IncomingCall | null>(null)
 
   useWebSocketEvent('call_incoming', (data) => {
@@ -23,17 +24,30 @@ export default function IncomingCallModal({ onAccept, onDecline }: Props) {
     })
   })
 
-  // Auto-dismiss after 45 seconds if not answered.
+  // Auto-dismiss after 45 s — notify the caller so they don't wait forever.
   useEffect(() => {
     if (!incoming) return
-    const t = setTimeout(() => setIncoming(null), 45_000)
+    const t = setTimeout(() => {
+      send({ type: 'call_reject', to: incoming.fromId, call_id: incoming.callId })
+      setIncoming(null)
+    }, 45_000)
     return () => clearTimeout(t)
-  }, [incoming])
+  }, [incoming, send])
 
   if (!incoming) return null
 
+  const handleDecline = () => {
+    send({ type: 'call_reject', to: incoming.fromId, call_id: incoming.callId })
+    onDecline(incoming)
+    setIncoming(null)
+  }
+
+  const handleAccept = () => {
+    onAccept(incoming)
+    setIncoming(null)
+  }
+
   return (
-    // On mobile: slides up from the bottom. On larger screens: centered.
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm flex flex-col items-center gap-5 shadow-2xl">
         <div className="w-16 h-16 rounded-full bg-indigo-700 flex items-center justify-center text-2xl font-bold select-none">
@@ -45,13 +59,13 @@ export default function IncomingCallModal({ onAccept, onDecline }: Props) {
         </div>
         <div className="flex gap-3 w-full">
           <button
-            onClick={() => { onDecline(incoming); setIncoming(null) }}
+            onClick={handleDecline}
             className="flex-1 bg-red-600 hover:bg-red-500 active:bg-red-700 text-white rounded-xl py-4 font-medium transition-colors text-base"
           >
             Decline
           </button>
           <button
-            onClick={() => { onAccept(incoming); setIncoming(null) }}
+            onClick={handleAccept}
             className="flex-1 bg-green-600 hover:bg-green-500 active:bg-green-700 text-white rounded-xl py-4 font-medium transition-colors text-base"
           >
             Accept

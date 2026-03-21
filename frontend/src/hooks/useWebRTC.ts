@@ -7,7 +7,7 @@ const ICE_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ]
 
-export type CallState = 'idle' | 'ringing' | 'connecting' | 'active' | 'ended'
+export type CallState = 'idle' | 'ringing' | 'connecting' | 'active' | 'ended' | 'declined'
 
 interface UseWebRTCOptions {
   callId: string
@@ -23,26 +23,31 @@ export function useWebRTC({ callId, peerId, isInitiator, onEnded }: UseWebRTCOpt
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
   const [muted, setMuted] = useState(false)
   const [cameraOff, setCameraOff] = useState(false)
+  const [hasDualCamera, setHasDualCamera] = useState(false)
 
-  const pcRef              = useRef<RTCPeerConnection | null>(null)
-  const localStreamRef     = useRef<MediaStream | null>(null)
-  const acceptSentRef      = useRef(false)
-  const offerSentRef       = useRef(false)
-  const terminatedRef      = useRef(false)
-  // Queue ICE candidates that arrive before setRemoteDescription is called.
-  const pendingCandidates  = useRef<RTCIceCandidateInit[]>([])
+  const pcRef                  = useRef<RTCPeerConnection | null>(null)
+  const localStreamRef         = useRef<MediaStream | null>(null)
+  const acceptSentRef          = useRef(false)
+  const offerSentRef           = useRef(false)
+  const terminatedRef          = useRef(false)
+  const facingModeRef          = useRef<'user' | 'environment'>('user')
+  const pendingCandidates      = useRef<RTCIceCandidateInit[]>([])
+  const iceDisconnectedTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const callerTimeoutRef       = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ------------------------------------------------------------------
-  // Resource cleanup — no state changes (avoids StrictMode false-ended flash)
+  // Resource cleanup
   // ------------------------------------------------------------------
   const cleanup = useCallback(() => {
+    if (iceDisconnectedTimer.current) { clearTimeout(iceDisconnectedTimer.current); iceDisconnectedTimer.current = null }
+    if (callerTimeoutRef.current)     { clearTimeout(callerTimeoutRef.current);     callerTimeoutRef.current = null }
     localStreamRef.current?.getTracks().forEach(t => t.stop())
     pcRef.current?.close()
-    pcRef.current        = null
+    pcRef.current         = null
     localStreamRef.current = null
   }, [])
 
-  const terminate = useCallback((notifyPeer: boolean) => {
+  const terminate = useCallback((notifyPeer: boolean, declined = false) => {
     if (terminatedRef.current) return
     terminatedRef.current = true
     if (notifyPeer) {
@@ -52,7 +57,7 @@ export function useWebRTC({ callId, peerId, isInitiator, onEnded }: UseWebRTCOpt
     cleanup()
     setLocalStream(null)
     setRemoteStream(null)
-    setCallState('ended')
+    setCallState(declined ? 'declined' : 'ended')
   }, [callId, peerId, send, cleanup])
 
   // ------------------------------------------------------------------
@@ -91,7 +96,24 @@ export function useWebRTC({ callId, peerId, isInitiator, onEnded }: UseWebRTCOpt
     }
 
     pc.oniceconnectionstatechange = () => {
-      console.log('[WebRTC] iceConnectionState:', pc.iceConnectionState)
+      const state = pc.iceConnectionState
+      console.log('[WebRTC] iceConnectionState:', state)
+
+      if (state === 'disconnected') {
+        // Give the browser 5 s to recover before tearing down.
+        iceDisconnectedTimer.current = setTimeout(() => {
+          if (pcRef.current?.iceConnectionState === 'disconnected') {
+            terminate(true)
+          }
+        }, 5000)
+      } else if (state === 'connected' || state === 'completed') {
+        if (iceDisconnectedTimer.current) {
+          clearTimeout(iceDisconnectedTimer.current)
+          iceDisconnectedTimer.current = null
+        }
+      } else if (state === 'failed') {
+        terminate(true)
+      }
     }
 
     pc.onconnectionstatechange = () => {
@@ -115,14 +137,22 @@ export function useWebRTC({ callId, peerId, isInitiator, onEnded }: UseWebRTCOpt
     localStreamRef.current = stream
     setLocalStream(stream)
     stream.getTracks().forEach(t => pc.addTrack(t, stream))
+
+    // Detect multiple cameras (labels available after getUserMedia).
+    navigator.mediaDevices.enumerateDevices().then(devices => {
+      setHasDualCamera(devices.filter(d => d.kind === 'videoinput').length > 1)
+    }).catch(() => {})
+
     return stream
   }, [terminate])
 
   // ------------------------------------------------------------------
-  // Caller: send offer after call_accept (guarded against double-fire)
+  // Caller: send offer after call_accept
   // ------------------------------------------------------------------
   useWebSocketEvent('call_accept', useCallback(async (data) => {
     if (data.call_id !== callId || !isInitiator) return
+    // Clear the no-answer timeout — peer picked up.
+    if (callerTimeoutRef.current) { clearTimeout(callerTimeoutRef.current); callerTimeoutRef.current = null }
     if (offerSentRef.current) return
     offerSentRef.current = true
     const pc = getPC()
@@ -165,13 +195,12 @@ export function useWebRTC({ callId, peerId, isInitiator, onEnded }: UseWebRTCOpt
   useWebSocketEvent('call_ice', useCallback(async (data) => {
     if (data.call_id !== callId) return
     const init: RTCIceCandidateInit = {
-      candidate:        data.candidate as string,
-      sdpMid:           data.sdp_mid as string,
-      sdpMLineIndex:    data.sdp_mline_index as number,
+      candidate:      data.candidate as string,
+      sdpMid:         data.sdp_mid as string,
+      sdpMLineIndex:  data.sdp_mline_index as number,
     }
     const pc = pcRef.current
     if (!pc || !pc.remoteDescription) {
-      // Remote description not ready yet — queue for later
       pendingCandidates.current.push(init)
       return
     }
@@ -187,12 +216,26 @@ export function useWebRTC({ callId, peerId, isInitiator, onEnded }: UseWebRTCOpt
   }, [callId, terminate]))
 
   // ------------------------------------------------------------------
-  // Callee: send call_accept once on mount
+  // Remote declined (callee rejected or timed out without answering)
+  // ------------------------------------------------------------------
+  useWebSocketEvent('call_reject', useCallback((data) => {
+    if (data.call_id !== callId) return
+    terminate(false, true)
+  }, [callId, terminate]))
+
+  // ------------------------------------------------------------------
+  // Callee: send call_accept once on mount.
+  // Caller: start 45 s no-answer timeout.
   // ------------------------------------------------------------------
   useEffect(() => {
     if (!isInitiator && !acceptSentRef.current) {
       acceptSentRef.current = true
       send({ type: 'call_accept', to: peerId, call_id: callId })
+    }
+    if (isInitiator) {
+      callerTimeoutRef.current = setTimeout(() => {
+        terminate(true)
+      }, 45_000)
     }
     return () => { cleanup() }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -212,5 +255,49 @@ export function useWebRTC({ callId, peerId, isInitiator, onEnded }: UseWebRTCOpt
     setCameraOff(v => !v)
   }, [])
 
-  return { callState, localStream, remoteStream, muted, cameraOff, hangup, toggleMute, toggleCamera }
+  // Switch between front and back camera (mobile).
+  const switchCamera = useCallback(async () => {
+    const pc = pcRef.current
+    const stream = localStreamRef.current
+    if (!pc || !stream) return
+
+    const nextFacing: 'user' | 'environment' =
+      facingModeRef.current === 'user' ? 'environment' : 'user'
+
+    let newStream: MediaStream
+    try {
+      newStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: nextFacing },
+        audio: false,
+      })
+    } catch {
+      return // requested camera not available
+    }
+
+    const [newVideoTrack] = newStream.getVideoTracks()
+
+    // Replace the video track in the peer connection without renegotiation.
+    const sender = pc.getSenders().find(s => s.track?.kind === 'video')
+    if (sender) await sender.replaceTrack(newVideoTrack)
+
+    // Stop the old video track and rebuild the local stream.
+    stream.getVideoTracks().forEach(t => t.stop())
+    const combined = new MediaStream([newVideoTrack, ...stream.getAudioTracks()])
+    localStreamRef.current = combined
+    setLocalStream(combined)
+    facingModeRef.current = nextFacing
+  }, [])
+
+  return {
+    callState,
+    localStream,
+    remoteStream,
+    muted,
+    cameraOff,
+    hasDualCamera,
+    hangup,
+    toggleMute,
+    toggleCamera,
+    switchCamera,
+  }
 }

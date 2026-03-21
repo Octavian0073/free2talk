@@ -12,17 +12,20 @@ interface Props {
 }
 
 export default function CallOverlay({ callId, peerId, peerName, isInitiator, onEnded }: Props) {
-  const { callState, localStream, remoteStream, muted, cameraOff, hangup, toggleMute, toggleCamera } =
-    useWebRTC({ callId, peerId, isInitiator, onEnded })
+  const {
+    callState, localStream, remoteStream,
+    muted, cameraOff, hasDualCamera,
+    hangup, toggleMute, toggleCamera, switchCamera,
+  } = useWebRTC({ callId, peerId, isInitiator, onEnded })
 
   useAudioCapture({ peerId, localStream, enabled: callState === 'active' })
 
   const localVideoRef  = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
 
-  // Auto-close 1.5s after ended so the user sees the "Call ended" message.
+  // Auto-close 1.5 s after the call ends or is declined.
   useEffect(() => {
-    if (callState !== 'ended') return
+    if (callState !== 'ended' && callState !== 'declined') return
     const t = setTimeout(onEnded, 1500)
     return () => clearTimeout(t)
   }, [callState, onEnded])
@@ -41,12 +44,13 @@ export default function CallOverlay({ callId, peerId, peerName, isInitiator, onE
     connecting: 'Connecting…',
     active:     '',
     ended:      'Call ended',
+    declined:   'Call declined',
   }
 
   return (
     <div className="fixed inset-0 z-40 bg-gray-950 flex flex-col">
 
-      {/* Remote video / avatar — fills the space above the controls bar */}
+      {/* Remote video / avatar */}
       <div className="flex-1 relative flex items-center justify-center bg-gray-900 min-h-0">
         {remoteStream ? (
           <video
@@ -70,7 +74,7 @@ export default function CallOverlay({ callId, peerId, peerName, isInitiator, onE
         {/* Captions */}
         <CaptionOverlay />
 
-        {/* Local video — picture-in-picture, top-left so captions don't overlap */}
+        {/* Local video — picture-in-picture */}
         {localStream && (
           <div className="absolute top-3 left-3 w-20 md:w-28 rounded-xl overflow-hidden shadow-xl border border-gray-700 aspect-[9/16]">
             <video
@@ -84,7 +88,7 @@ export default function CallOverlay({ callId, peerId, peerName, isInitiator, onE
         )}
       </div>
 
-      {/* Controls bar — larger touch targets for mobile */}
+      {/* Controls bar */}
       <div className="flex items-center justify-center gap-6 py-6 bg-gray-900 border-t border-gray-800 flex-shrink-0">
         <ControlButton
           onClick={toggleMute}
@@ -98,7 +102,16 @@ export default function CallOverlay({ callId, peerId, peerName, isInitiator, onE
           label={cameraOff ? 'Camera on' : 'Camera off'}
           icon={cameraOff ? '📷' : '📹'}
         />
-        {/* End call — prominent red, larger for mobile */}
+        {/* Switch camera — only shown when device has front + back cameras */}
+        {hasDualCamera && (
+          <ControlButton
+            onClick={switchCamera}
+            active={false}
+            label="Switch camera"
+            icon="🔄"
+          />
+        )}
+        {/* End call — prominent red */}
         <button
           onClick={hangup}
           className="bg-red-600 active:bg-red-700 hover:bg-red-500 text-white rounded-full w-16 h-16 flex items-center justify-center text-2xl shadow-lg transition-colors"

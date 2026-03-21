@@ -113,7 +113,7 @@ export default function ConversationSidebar({ friends, friendsLoading, selectedI
       )}
 
       {/* Incoming requests panel */}
-      {showRequests && !isSearching && (
+      {showRequests && requests.length > 0 && !isSearching && (
         <ul className="border-b border-gray-800 bg-gray-900">
           {requests.map(req => (
             <li key={req.friendship_id} className="flex items-center gap-2 px-4 py-2.5">

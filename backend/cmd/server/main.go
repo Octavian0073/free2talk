@@ -60,7 +60,7 @@ func main() {
 	devMode := os.Getenv("DEV_MODE") == "true"
 
 	chatHandler := &chat.Handler{DB: pool, Hub: hub, Translate: translator, DevMode: devMode}
-	friendsHandler := &friends.Handler{DB: pool}
+	friendsHandler := &friends.Handler{DB: pool, Hub: hub}
 	callHandler := &call.Handler{DB: pool, Hub: hub}
 
 	// ML service connection — Unix socket preferred (no TCP overhead).

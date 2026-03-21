@@ -31,6 +31,8 @@ export default function ConversationPane({
   const [showContactMenu, setShowContactMenu] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [unfriending, setUnfriending] = useState(false)
+  const [isFriend, setIsFriend] = useState(true)
+  const [addBackStatus, setAddBackStatus] = useState<'idle' | 'sending' | 'sent'>('idle')
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const contactMenuRef = useRef<HTMLDivElement>(null)
@@ -95,10 +97,24 @@ export default function ConversationPane({
     setUnfriending(true)
     try {
       await api.unfriendUser(contact.id)
-      onUnfriend(contact.id)
+      setIsFriend(false)
+      setShowContactMenu(false)
+      onUnfriend(contact.id) // removes from sidebar; pane stays open
     } catch (err) {
       console.error('unfriend failed:', err)
+    } finally {
       setUnfriending(false)
+    }
+  }
+
+  const handleAddBack = async () => {
+    setAddBackStatus('sending')
+    try {
+      await api.sendFriendRequest(contact.username)
+      setAddBackStatus('sent')
+      setShowContactMenu(false)
+    } catch {
+      setAddBackStatus('idle')
     }
   }
 
@@ -154,16 +170,31 @@ export default function ConversationPane({
 
         {/* Contact action menu */}
         {showContactMenu && (
-          <div className="absolute top-full left-0 right-0 bg-gray-850 border-b border-gray-700 shadow-lg z-10 bg-gray-900">
+          <div className="absolute top-full left-0 right-0 border-b border-gray-700 shadow-lg z-10 bg-gray-900">
             <div className="px-4 py-2">
-              <button
-                onClick={handleUnfriend}
-                disabled={unfriending}
-                className="flex items-center gap-2 w-full text-left text-sm text-red-400 hover:text-red-300 hover:bg-gray-800 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
-              >
-                <UnfriendIcon />
-                {unfriending ? 'Removing…' : `Unfriend ${contact.display_name}`}
-              </button>
+              {isFriend ? (
+                <button
+                  onClick={handleUnfriend}
+                  disabled={unfriending}
+                  className="flex items-center gap-2 w-full text-left text-sm text-red-400 hover:text-red-300 hover:bg-gray-800 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <UnfriendIcon />
+                  {unfriending ? 'Removing…' : `Unfriend ${contact.display_name}`}
+                </button>
+              ) : addBackStatus === 'sent' ? (
+                <p className="text-xs text-indigo-400 px-3 py-2">
+                  Friend request sent to {contact.display_name}
+                </p>
+              ) : (
+                <button
+                  onClick={handleAddBack}
+                  disabled={addBackStatus === 'sending'}
+                  className="flex items-center gap-2 w-full text-left text-sm text-indigo-400 hover:text-indigo-300 hover:bg-gray-800 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <AddBackIcon />
+                  {addBackStatus === 'sending' ? 'Sending…' : `Add ${contact.display_name} back`}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -188,6 +219,25 @@ export default function ConversationPane({
         )}
         <div ref={bottomRef} />
       </div>
+
+      {/* Not-friends banner */}
+      {!isFriend && (
+        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-800 border-t border-gray-700 text-xs text-gray-400 flex-shrink-0">
+          <span>You are no longer friends.</span>
+          {addBackStatus !== 'sent' && (
+            <button
+              onClick={handleAddBack}
+              disabled={addBackStatus === 'sending'}
+              className="text-indigo-400 hover:text-indigo-300 font-medium disabled:opacity-50 transition-colors"
+            >
+              {addBackStatus === 'sending' ? 'Sending…' : 'Add back'}
+            </button>
+          )}
+          {addBackStatus === 'sent' && (
+            <span className="text-indigo-400">Request sent</span>
+          )}
+        </div>
+      )}
 
       {/* Input bar */}
       <div className="flex items-center gap-2 px-3 py-3 border-t border-gray-800 flex-shrink-0">
@@ -214,13 +264,13 @@ export default function ConversationPane({
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={`Write in ${myLang?.label ?? 'your language'}…`}
-          disabled={sending}
-          className="flex-1 bg-gray-800 text-white rounded-xl px-4 py-3 text-sm outline-none placeholder-gray-600 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+          placeholder={isFriend ? `Write in ${myLang?.label ?? 'your language'}…` : 'Add back to send messages'}
+          disabled={sending || !isFriend}
+          className="flex-1 bg-gray-800 text-white rounded-xl px-4 py-3 text-sm outline-none placeholder-gray-600 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
         />
         <button
           onClick={handleSend}
-          disabled={sending || !text.trim()}
+          disabled={sending || !text.trim() || !isFriend}
           className="flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl px-4 py-3 text-sm font-medium transition-colors"
         >
           {sending ? '…' : 'Send'}
@@ -286,6 +336,14 @@ function UnfriendIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M22 10H16M9 11a4 4 0 100-8 4 4 0 000 8zm-7 9a7 7 0 0114 0H2z" />
+    </svg>
+  )
+}
+
+function AddBackIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3M9 11a4 4 0 100-8 4 4 0 000 8zm-7 9a7 7 0 0114 0H2z" />
     </svg>
   )
 }
