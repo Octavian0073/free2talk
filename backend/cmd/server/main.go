@@ -2,11 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -59,7 +64,11 @@ func main() {
 	// any device on the local network (e.g. phone testing). Never use in production.
 	devMode := os.Getenv("DEV_MODE") == "true"
 
-	chatHandler := &chat.Handler{DB: pool, Hub: hub, Translate: translator, DevMode: devMode}
+	// APP_ORIGIN is the production frontend URL (e.g. "https://free2talk.example.com").
+	// Used for CORS allowed origins and WebSocket origin checks.
+	appOrigin := os.Getenv("APP_ORIGIN")
+
+	chatHandler := &chat.Handler{DB: pool, Hub: hub, Translate: translator, DevMode: devMode, AllowedOrigin: appOrigin}
 	friendsHandler := &friends.Handler{DB: pool, Hub: hub}
 	callHandler := &call.Handler{DB: pool, Hub: hub}
 
@@ -75,14 +84,22 @@ func main() {
 	// so "http://localhost" is just a placeholder that satisfies http.Request.
 	mlClient := audio.NewMLClient(mlSocketPath)
 	vadCfg := audio.NewVADConfigFromEnv()
-	audioHandler := &audio.Handler{DB: pool, Hub: hub, MLURL: mlURL, MLClient: mlClient, DevMode: devMode, VAD: vadCfg}
+	audioHandler := &audio.Handler{DB: pool, Hub: hub, MLURL: mlURL, MLClient: mlClient, DevMode: devMode, VAD: vadCfg, AllowedOrigin: appOrigin}
 
 	var corsOrigins []string
 	if devMode {
 		corsOrigins = []string{"*"}
 		log.Println("WARNING: DEV_MODE enabled — CORS and origin checks are open to all origins")
 	} else {
-		corsOrigins = []string{"http://localhost:5173", "http://localhost:3000"}
+		corsOrigins = []string{
+			"http://localhost:5173",
+			"http://localhost:3000",
+			"https://localhost:5173",
+			"https://localhost:3000",
+		}
+		if appOrigin != "" {
+			corsOrigins = append(corsOrigins, appOrigin)
+		}
 	}
 
 	r := chi.NewRouter()
@@ -98,6 +115,47 @@ func main() {
 	// Health check (unauthenticated, used by infra probes)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
+	})
+
+	// TURN credentials — returns short-lived HMAC-SHA1 credentials for Coturn.
+	// Requires TURN_HOST and TURN_SECRET env vars. If either is absent, falls
+	// back to Google STUN only so calls still work on same-network / simple NAT.
+	// Credentials expire after 1 hour (standard Coturn time-limited auth).
+	turnHost := os.Getenv("TURN_HOST")
+	turnSecret := os.Getenv("TURN_SECRET")
+	r.With(mw.Auth(pool)).Get("/api/turn-credentials", func(w http.ResponseWriter, r *http.Request) {
+		type iceServer struct {
+			URLs       interface{} `json:"urls"`
+			Username   string      `json:"username,omitempty"`
+			Credential string      `json:"credential,omitempty"`
+		}
+		type response struct {
+			ICEServers []iceServer `json:"iceServers"`
+		}
+
+		servers := []iceServer{
+			{URLs: "stun:stun.l.google.com:19302"},
+		}
+
+		if turnHost != "" && turnSecret != "" {
+			expiry := time.Now().Add(time.Hour).Unix()
+			username := strconv.FormatInt(expiry, 10) + ":free2talk"
+			mac := hmac.New(sha1.New, []byte(turnSecret))
+			mac.Write([]byte(username))
+			credential := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+
+			servers = append(servers, iceServer{
+				URLs: []string{
+					"turn:" + turnHost + ":3478",
+					"turns:" + turnHost + ":5349",
+				},
+				Username:   username,
+				Credential: credential,
+			})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response{ICEServers: servers})
 	})
 
 	// ML warmup — streams SSE events while waiting for the Modal container.

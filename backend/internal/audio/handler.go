@@ -88,12 +88,13 @@ func getenvInt(key string) int {
 
 // Handler holds dependencies for the audio WebSocket endpoint.
 type Handler struct {
-	DB       *pgxpool.Pool
-	Hub      *chat.Hub
-	MLURL    string
-	MLClient *http.Client
-	DevMode  bool
-	VAD      VADConfig
+	DB            *pgxpool.Pool
+	Hub           *chat.Hub
+	MLURL         string
+	MLClient      *http.Client
+	DevMode       bool
+	VAD           VADConfig
+	AllowedOrigin string // production domain e.g. "https://free2talk.example.com"
 }
 
 func (h *Handler) upgrader() *websocket.Upgrader {
@@ -104,7 +105,11 @@ func (h *Handler) upgrader() *websocket.Upgrader {
 			if h.DevMode {
 				return true
 			}
-			return prodOrigins[r.Header.Get("Origin")]
+			origin := r.Header.Get("Origin")
+			if h.AllowedOrigin != "" && origin == h.AllowedOrigin {
+				return true
+			}
+			return prodOrigins[origin]
 		},
 	}
 }

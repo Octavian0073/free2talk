@@ -130,11 +130,35 @@
   - Updated: Landing, Login, Register, Profile, ChatApp, ConversationSidebar, ConversationPane, CallOverlay, IncomingCallModal
   - Toggle button (`日本語`/`EN`) on every page
 
+#### Completed this session (2026-03-22 session 4, continued) — Production readiness
+- [x] **TURN credentials endpoint** (`GET /api/turn-credentials`, auth required)
+  - HMAC-SHA1 time-limited credentials (1h TTL) — compatible with Coturn `use-auth-secret`
+  - Returns both `turn:HOST:3478` and `turns:HOST:5349` URLs
+  - Graceful fallback to Google STUN if `TURN_HOST`/`TURN_SECRET` not set
+- [x] **Dynamic ICE server fetching** in `useWebRTC.ts`
+  - Fetches credentials from backend on call mount, falls back to STUN on error
+  - Replaces hardcoded Google STUN-only config
+- [x] **Production origin support** (`APP_ORIGIN` env var)
+  - Added to CORS allowed origins list in main.go
+  - Added to WS `CheckOrigin` in both `chat/handlers.go` and `audio/handler.go`
+- [x] **i18n fix** — `ConversationPane` header "you see X" now uses `T.youSee(lang)` key
+- [x] **VAD env vars documented** in README (were already implemented, just undocumented)
+
 #### Remaining Phase 5 tasks
 - [ ] Tune VAD thresholds (`speechRMSMin`, `silenceToFlush`) for different mic environments
 - [ ] Graceful degradation: translation failure → deliver original text with label
 - [ ] Graceful degradation: STT/caption failure → silent, no crash
 - [ ] Production build test (`npm run build`, verify no source exposure)
+
+#### VPS deployment checklist (next phase)
+- [ ] DNS A record pointing to VPS IP
+- [ ] Nginx — reverse proxy: static frontend + `/api/*` + `/ws/*` to backend port 8000
+- [ ] TLS — Let's Encrypt via certbot, auto-renewal
+- [ ] Coturn — install, configure `use-auth-secret`, open ports 3478/5349/49152-65535 UDP
+- [ ] systemd unit for Go backend (auto-restart on crash/reboot)
+- [ ] `npm run build` → copy `dist/` to Nginx web root
+- [ ] Production `.env`: `APP_ORIGIN=https://free2talk.live`, `TURN_HOST=free2talk.live`, `TURN_SECRET`, `JWT_SECRET`, `DATABASE_URL`, `ML_SERVICE_URL`, no `DEV_MODE`
+- [ ] Set `is_admin=true` for first admin user via psql
 
 ---
 
@@ -264,6 +288,8 @@ navigator.mediaDevices.getUserMedia = async () => {
 - VAD: Go RMS energy VAD (pure math, no ML) — utterance-complete before sending to Whisper
 - Audio format to ML service: WAV (RIFF header + raw Int16 PCM, constructed in Go)
 - Dev HTTPS: @vitejs/plugin-basic-ssl (self-signed, required for getUserMedia on LAN)
+- TURN credentials: backend generates HMAC-SHA1 time-limited creds (Coturn `use-auth-secret`); frontend fetches on call mount
+- Production origins: `APP_ORIGIN` env var added to CORS allowlist + WS CheckOrigin in chat and audio handlers
 
 ## Known Tech Debt
 - No DB migration tool — schema changes require manual ALTER TABLE on existing DBs

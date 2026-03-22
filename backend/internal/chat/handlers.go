@@ -26,10 +26,11 @@ var prodOrigins = map[string]bool{
 
 // Handler holds the shared dependencies for all chat endpoints.
 type Handler struct {
-	DB        *pgxpool.Pool
-	Hub       *Hub
-	Translate *translate.Client
-	DevMode   bool
+	DB            *pgxpool.Pool
+	Hub           *Hub
+	Translate     *translate.Client
+	DevMode       bool
+	AllowedOrigin string // production domain e.g. "https://free2talk.example.com"
 }
 
 func (h *Handler) upgrader() *websocket.Upgrader {
@@ -40,7 +41,11 @@ func (h *Handler) upgrader() *websocket.Upgrader {
 			if h.DevMode {
 				return true // all origins allowed in dev
 			}
-			return prodOrigins[r.Header.Get("Origin")]
+			origin := r.Header.Get("Origin")
+			if h.AllowedOrigin != "" && origin == h.AllowedOrigin {
+				return true
+			}
+			return prodOrigins[origin]
 		},
 	}
 }

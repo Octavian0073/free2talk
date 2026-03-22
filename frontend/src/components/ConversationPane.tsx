@@ -147,7 +147,7 @@ export default function ConversationPane({
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">{contact.display_name}</p>
               <p className="text-xs text-gray-500 truncate">
-                {contactLang?.flag} {contactLang?.label} &rarr; you see {myLang?.label}
+                {contactLang?.flag} {contactLang?.label} {T.youSee(myLang?.label ?? '')}
               </p>
             </div>
             <ChevronIcon open={showContactMenu} />

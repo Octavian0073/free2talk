@@ -2,7 +2,16 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useWebSocketContext, useWebSocketEvent } from '../context/WebSocketContext'
 import { api } from '../api/client'
 
-const ICE_SERVERS = [
+async function fetchIceServers(): Promise<RTCIceServer[]> {
+  try {
+    const { iceServers } = await api.getTurnCredentials()
+    return iceServers
+  } catch {
+    return FALLBACK_ICE_SERVERS
+  }
+}
+
+const FALLBACK_ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
 ]
@@ -34,6 +43,7 @@ export function useWebRTC({ callId, peerId, isInitiator, onEnded }: UseWebRTCOpt
   const pendingCandidates      = useRef<RTCIceCandidateInit[]>([])
   const iceDisconnectedTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
   const callerTimeoutRef       = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const iceServersRef          = useRef<RTCIceServer[]>(FALLBACK_ICE_SERVERS)
 
   // ------------------------------------------------------------------
   // Resource cleanup
@@ -75,7 +85,7 @@ export function useWebRTC({ callId, peerId, isInitiator, onEnded }: UseWebRTCOpt
   // ------------------------------------------------------------------
   const getPC = useCallback(() => {
     if (pcRef.current) return pcRef.current
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS })
+    const pc = new RTCPeerConnection({ iceServers: iceServersRef.current })
 
     pc.onicecandidate = (e) => {
       if (!e.candidate) return
@@ -228,6 +238,10 @@ export function useWebRTC({ callId, peerId, isInitiator, onEnded }: UseWebRTCOpt
   // Caller: start 45 s no-answer timeout.
   // ------------------------------------------------------------------
   useEffect(() => {
+    // Fetch TURN credentials before any signaling so the PC is created with
+    // the correct ICE servers. Falls back to Google STUN if the endpoint fails.
+    fetchIceServers().then(servers => { iceServersRef.current = servers })
+
     if (!isInitiator && !acceptSentRef.current) {
       acceptSentRef.current = true
       send({ type: 'call_accept', to: peerId, call_id: callId })

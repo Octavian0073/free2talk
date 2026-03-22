@@ -51,6 +51,7 @@ const t = {
     noFriendsHint:       'Search by @username above to add friends.',
 
     // Conversation pane
+    youSee:              (lang: string) => `→ you see ${lang}`,
     send:                'Send',
     back:                'Back',
     startVideoCall:      'Start video call',
@@ -145,6 +146,7 @@ const t = {
     noFriendsHint:       '上の検索で@ユーザー名を入力して友達を追加しましょう。',
 
     // Conversation pane
+    youSee:              (lang: string) => `→ ${lang}で表示`,
     send:                '送信',
     back:                '戻る',
     startVideoCall:      'ビデオ通話を開始',

@@ -173,6 +173,13 @@ Then select VirtualMic0.monitor as the microphone in the browser.
 | `LIBRETRANSLATE_URL` | `http://localhost:5000` | LibreTranslate instance URL |
 | `ML_SERVICE_URL` | — | Modal deployment URL (e.g. `https://octavian0073--free2talk-ml-*.modal.run`) |
 | `DEV_MODE` | `false` | Set `true` for local dev (loosens CORS/origin checks) |
+| `APP_ORIGIN` | — | Production frontend URL e.g. `https://free2talk.live` — added to CORS + WS origin allowlist |
+| `TURN_HOST` | — | Hostname/IP of your Coturn server (e.g. `free2talk.live`) |
+| `TURN_SECRET` | — | Coturn `use-auth-secret` value — used to generate time-limited HMAC credentials |
+| `VAD_SPEECH_RMS_MIN` | `0.015` | RMS energy threshold below which audio is considered silence |
+| `VAD_SILENCE_FRAMES` | `12` | Consecutive silent 50ms frames before flushing utterance (~600ms) |
+| `VAD_MIN_SPEECH_FRAMES` | `3` | Minimum speech frames to prevent noise triggers (~150ms) |
+| `VAD_MAX_SPEECH_FRAMES` | `200` | Hard cap on utterance length before forced flush (~10s) |
 
 ---
 
@@ -196,7 +203,7 @@ Then select VirtualMic0.monitor as the microphone in the browser.
 
 ## Known limitations
 
-- **No TURN server** — WebRTC uses STUN only. Connections between users behind symmetric NAT (some corporate networks, mobile carriers) may fail. Add Coturn for production.
+- **TURN server** — Backend generates time-limited HMAC credentials at `GET /api/turn-credentials`. Set `TURN_HOST` + `TURN_SECRET` (matches Coturn `use-auth-secret`). Falls back to Google STUN if unset.
 - **STUN servers** — Google's public STUN (`stun.l.google.com:19302`) is used. Replace with your own in production.
 - **Self-signed TLS** — Vite's `@vitejs/plugin-basic-ssl` is used for local dev. Production needs a real certificate (Let's Encrypt via certbot).
 - **No refresh tokens** — JWTs expire after 24h. Users must log in again.

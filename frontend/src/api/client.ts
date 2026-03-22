@@ -85,6 +85,9 @@ export const api = {
   },
 
   // Phase 3 — calls
+  getTurnCredentials: () =>
+    request<{ iceServers: RTCIceServer[] }>('/turn-credentials'),
+
   initiateCall: (callee_id: string) =>
     request<{ call_id: string }>('/calls', { method: 'POST', body: JSON.stringify({ callee_id }) }),
 
