@@ -19,7 +19,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const text = await res.text()
     throw new Error(text.trim() || `HTTP ${res.status}`)
   }
-  if (res.status === 204 || res.headers.get('content-length') === '0') {
+  if (res.status === 200 && res.headers.get('content-length') === '0') return undefined as T
+  if (res.status === 202 || res.status === 204 || res.headers.get('content-length') === '0') {
     return undefined as T
   }
   return res.json() as Promise<T>
@@ -66,6 +67,22 @@ export const api = {
 
   updateProfile: (body: { display_name: string; email: string; language_code: string; password: string }) =>
     request<User>('/user/profile', { method: 'PUT', body: JSON.stringify(body) }),
+
+  // ML warmup — streams SSE from Go while Modal cold-starts.
+  // Calls onTick(elapsed) every second and resolves when ready.
+  warmupML: (onTick: (elapsed: number) => void): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const token = getToken()
+      const url = `${BASE}/ml/warmup${token ? `?token=${encodeURIComponent(token)}` : ''}`
+      const es = new EventSource(url)
+      es.addEventListener('warming', (e) => {
+        const { elapsed } = JSON.parse((e as MessageEvent).data)
+        onTick(elapsed)
+      })
+      es.addEventListener('ready', () => { es.close(); resolve() })
+      es.addEventListener('error', () => { es.close(); reject(new Error('ML service unreachable')) })
+    })
+  },
 
   // Phase 3 — calls
   initiateCall: (callee_id: string) =>

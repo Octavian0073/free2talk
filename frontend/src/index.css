@@ -7,3 +7,12 @@ html, body, #root {
   background-color: #111827; /* gray-900 */
   overflow: hidden;
 }
+
+/* Hide native browser video controls on all video elements (mobile Safari, Chrome Android) */
+video::-webkit-media-controls,
+video::-webkit-media-controls-enclosure,
+video::-webkit-media-controls-panel,
+video::-webkit-media-controls-start-playback-button,
+video::-webkit-media-controls-play-button {
+  display: none !important;
+}

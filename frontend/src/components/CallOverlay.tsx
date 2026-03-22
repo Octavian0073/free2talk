@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useWebRTC } from '../hooks/useWebRTC'
 import { useAudioCapture } from '../hooks/useAudioCapture'
 import CaptionOverlay from './CaptionOverlay'
+import { useUILang } from '../context/UILangContext'
 
 interface Props {
   callId: string
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export default function CallOverlay({ callId, peerId, peerName, isInitiator, onEnded }: Props) {
+  const { T } = useUILang()
   const {
     callState, localStream, remoteStream,
     muted, cameraOff, hasDualCamera,
@@ -39,12 +41,12 @@ export default function CallOverlay({ callId, peerId, peerName, isInitiator, onE
   }, [remoteStream])
 
   const stateLabel: Record<typeof callState, string> = {
-    idle:       'Starting…',
-    ringing:    'Ringing…',
-    connecting: 'Connecting…',
+    idle:       T.startingCall,
+    ringing:    T.ringing,
+    connecting: T.connecting,
     active:     '',
-    ended:      'Call ended',
-    declined:   'Call declined',
+    ended:      T.callEnded,
+    declined:   T.callDeclined,
   }
 
   return (
@@ -58,7 +60,8 @@ export default function CallOverlay({ callId, peerId, peerName, isInitiator, onE
             autoPlay
             playsInline
             disablePictureInPicture
-            className="w-full h-full object-cover [&::-webkit-media-controls]{display:none}"
+            disableRemotePlayback
+            className="w-full h-full object-cover"
           />
         ) : (
           <div className="flex flex-col items-center gap-4">
@@ -84,7 +87,8 @@ export default function CallOverlay({ callId, peerId, peerName, isInitiator, onE
               playsInline
               muted
               disablePictureInPicture
-              className="w-full h-full object-cover [&::-webkit-media-controls]{display:none}"
+              disableRemotePlayback
+              className="w-full h-full object-cover"
             />
           </div>
         )}
@@ -95,29 +99,27 @@ export default function CallOverlay({ callId, peerId, peerName, isInitiator, onE
         <ControlButton
           onClick={toggleMute}
           active={muted}
-          label={muted ? 'Unmute' : 'Mute'}
+          label={muted ? T.unmute : T.mute}
           icon={muted ? '🔇' : '🎙️'}
         />
         <ControlButton
           onClick={toggleCamera}
           active={cameraOff}
-          label={cameraOff ? 'Camera on' : 'Camera off'}
+          label={cameraOff ? T.cameraOn : T.cameraOff}
           icon={cameraOff ? '📷' : '📹'}
         />
-        {/* Switch camera — only shown when device has front + back cameras */}
         {hasDualCamera && (
           <ControlButton
             onClick={switchCamera}
             active={false}
-            label="Switch camera"
+            label={T.switchCamera}
             icon="🔄"
           />
         )}
-        {/* End call — prominent red */}
         <button
           onClick={hangup}
           className="bg-red-600 active:bg-red-700 hover:bg-red-500 text-white rounded-full w-16 h-16 flex items-center justify-center text-2xl shadow-lg transition-colors"
-          title="End call"
+          title={T.endCall}
         >
           📵
         </button>

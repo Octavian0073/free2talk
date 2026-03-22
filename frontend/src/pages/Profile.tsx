@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { LANGUAGES } from '../types'
 import { api } from '../api/client'
+import { useUILang } from '../context/UILangContext'
 
 export default function Profile() {
   const { user, updateUser } = useAuth()
   const navigate = useNavigate()
+  const { T } = useUILang()
 
   const [displayName, setDisplayName] = useState(user?.display_name ?? '')
   const [email, setEmail] = useState(user?.email ?? '')
@@ -21,7 +23,7 @@ export default function Profile() {
     setError('')
     setSuccess(false)
     if (!password) {
-      setError('Enter your current password to save changes.')
+      setError(T.enterPasswordToSave)
       return
     }
     setSaving(true)
@@ -31,7 +33,7 @@ export default function Profile() {
       setPassword('')
       setSuccess(true)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save changes.')
+      setError(err instanceof Error ? err.message : T.profileSaveFailed)
     } finally {
       setSaving(false)
     }
@@ -45,11 +47,11 @@ export default function Profile() {
         <button
           onClick={() => navigate('/')}
           className="text-gray-400 hover:text-white p-2 rounded-lg transition-colors -ml-1"
-          title="Back to chat"
+          title={T.backToChat}
         >
           <BackIcon />
         </button>
-        <h1 className="text-base font-semibold">Profile</h1>
+        <h1 className="text-base font-semibold">{T.profile}</h1>
       </header>
 
       <main className="flex-1 flex items-start justify-center px-4 py-8">
@@ -66,31 +68,31 @@ export default function Profile() {
           <form onSubmit={handleSave} className="space-y-5">
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5 font-medium">Display name</label>
+              <label className="block text-xs text-gray-400 mb-1.5 font-medium">{T.displayName}</label>
               <input
                 type="text"
                 value={displayName}
                 onChange={e => setDisplayName(e.target.value)}
                 className="w-full bg-gray-800 text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-1 focus:ring-indigo-500 placeholder-gray-600"
-                placeholder="Your name"
+                placeholder={T.displayNamePlaceholder}
                 required
               />
             </div>
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5 font-medium">Email</label>
+              <label className="block text-xs text-gray-400 mb-1.5 font-medium">{T.email}</label>
               <input
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 className="w-full bg-gray-800 text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-1 focus:ring-indigo-500 placeholder-gray-600"
-                placeholder="your@email.com"
+                placeholder={T.emailPlaceholder}
                 required
               />
             </div>
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5 font-medium">Language</label>
+              <label className="block text-xs text-gray-400 mb-1.5 font-medium">{T.yourLanguage}</label>
               <div className="flex gap-2">
                 {LANGUAGES.map(lang => (
                   <button
@@ -112,7 +114,7 @@ export default function Profile() {
 
             <div className="pt-2 border-t border-gray-800">
               <label className="block text-xs text-gray-400 mb-1.5 font-medium">
-                Current password <span className="text-gray-600">(required to save changes)</span>
+                {T.currentPassword} <span className="text-gray-600">{T.passwordRequired}</span>
               </label>
               <input
                 type="password"
@@ -130,7 +132,7 @@ export default function Profile() {
             )}
             {success && (
               <p className="text-sm text-green-400 bg-green-950 border border-green-800 rounded-xl px-4 py-3">
-                Profile updated successfully.
+                {T.profileUpdated}
               </p>
             )}
 
@@ -139,7 +141,7 @@ export default function Profile() {
               disabled={saving}
               className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-3 rounded-xl transition-colors text-sm"
             >
-              {saving ? 'Saving…' : 'Save changes'}
+              {saving ? T.saving : T.saveChanges}
             </button>
           </form>
         </div>

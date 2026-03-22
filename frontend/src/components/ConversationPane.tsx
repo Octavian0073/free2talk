@@ -3,6 +3,7 @@ import type { PublicUser, User, Message } from '../types'
 import { LANGUAGES } from '../types'
 import { api } from '../api/client'
 import EmojiPicker from './EmojiPicker'
+import { useUILang } from '../context/UILangContext'
 
 interface Props {
   contact: PublicUser
@@ -25,6 +26,7 @@ export default function ConversationPane({
   onBack,
   onUnfriend,
 }: Props) {
+  const { T } = useUILang()
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
@@ -129,7 +131,7 @@ export default function ConversationPane({
           <button
             onClick={onBack}
             className="md:hidden flex-shrink-0 text-gray-400 hover:text-white p-2 -ml-1 rounded-lg transition-colors"
-            title="Back"
+            title={T.back}
           >
             <BackIcon />
           </button>
@@ -161,7 +163,7 @@ export default function ConversationPane({
                 console.error('call failed to start:', err)
               }
             }}
-            title="Start video call"
+            title={T.startVideoCall}
             className="flex-shrink-0 text-gray-400 hover:text-white p-2 rounded-lg transition-colors"
           >
             <VideoIcon />
@@ -179,11 +181,11 @@ export default function ConversationPane({
                   className="flex items-center gap-2 w-full text-left text-sm text-red-400 hover:text-red-300 hover:bg-gray-800 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
                 >
                   <UnfriendIcon />
-                  {unfriending ? 'Removing…' : `Unfriend ${contact.display_name}`}
+                  {unfriending ? T.removing : `${T.unfriend} ${contact.display_name}`}
                 </button>
               ) : addBackStatus === 'sent' ? (
                 <p className="text-xs text-indigo-400 px-3 py-2">
-                  Friend request sent to {contact.display_name}
+                  {T.friendRequestSent(contact.display_name)}
                 </p>
               ) : (
                 <button
@@ -192,7 +194,7 @@ export default function ConversationPane({
                   className="flex items-center gap-2 w-full text-left text-sm text-indigo-400 hover:text-indigo-300 hover:bg-gray-800 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
                 >
                   <AddBackIcon />
-                  {addBackStatus === 'sending' ? 'Sending…' : `Add ${contact.display_name} back`}
+                  {addBackStatus === 'sending' ? T.sending : `${T.addBack} ${contact.display_name}`}
                 </button>
               )}
             </div>
@@ -203,10 +205,10 @@ export default function ConversationPane({
       {/* Message area */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
         {loadingHistory ? (
-          <p className="text-center text-gray-600 text-xs mt-8">Loading messages…</p>
+          <p className="text-center text-gray-600 text-xs mt-8">{T.loadingMessages}</p>
         ) : messages.length === 0 ? (
           <p className="text-center text-gray-700 text-xs mt-8">
-            This is the beginning of your conversation with {contact.display_name}.
+            {T.beginningOfConvo(contact.display_name)}
           </p>
         ) : (
           messages.map(msg => (
@@ -223,18 +225,18 @@ export default function ConversationPane({
       {/* Not-friends banner */}
       {!isFriend && (
         <div className="flex items-center justify-between px-4 py-2.5 bg-gray-800 border-t border-gray-700 text-xs text-gray-400 flex-shrink-0">
-          <span>You are no longer friends.</span>
+          <span>{T.noLongerFriends}</span>
           {addBackStatus !== 'sent' && (
             <button
               onClick={handleAddBack}
               disabled={addBackStatus === 'sending'}
               className="text-indigo-400 hover:text-indigo-300 font-medium disabled:opacity-50 transition-colors"
             >
-              {addBackStatus === 'sending' ? 'Sending…' : 'Add back'}
+              {addBackStatus === 'sending' ? T.sending : T.addBack}
             </button>
           )}
           {addBackStatus === 'sent' && (
-            <span className="text-indigo-400">Request sent</span>
+            <span className="text-indigo-400">{T.requestSent}</span>
           )}
         </div>
       )}
@@ -264,7 +266,7 @@ export default function ConversationPane({
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={isFriend ? `Write in ${myLang?.label ?? 'your language'}…` : 'Add back to send messages'}
+          placeholder={isFriend ? T.writeInLang(myLang?.label ?? 'your language') : T.addBackToSend}
           disabled={sending || !isFriend}
           className="flex-1 bg-gray-800 text-white rounded-xl px-4 py-3 text-sm outline-none placeholder-gray-600 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
         />
@@ -273,7 +275,7 @@ export default function ConversationPane({
           disabled={sending || !text.trim() || !isFriend}
           className="flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl px-4 py-3 text-sm font-medium transition-colors"
         >
-          {sending ? '…' : 'Send'}
+          {sending ? '…' : T.send}
         </button>
       </div>
     </div>
@@ -281,6 +283,7 @@ export default function ConversationPane({
 }
 
 function MessageBubble({ msg, isOwn }: { msg: Message; isOwn: boolean }) {
+  const { T } = useUILang()
   const displayText = isOwn ? msg.original_text : msg.translated_text
 
   return (
@@ -294,7 +297,7 @@ function MessageBubble({ msg, isOwn }: { msg: Message; isOwn: boolean }) {
       >
         <p>{displayText}</p>
         {!isOwn && msg.translation_failed && (
-          <p className="text-[10px] mt-0.5 text-yellow-500">translation unavailable</p>
+          <p className="text-[10px] mt-0.5 text-yellow-500">{T.translationUnavailable}</p>
         )}
         <p className={`text-[10px] mt-1 ${isOwn ? 'text-indigo-200 text-right' : 'text-gray-500'}`}>
           {formatTime(msg.created_at)}

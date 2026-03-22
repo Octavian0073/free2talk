@@ -111,14 +111,14 @@ export function useWebRTC({ callId, peerId, isInitiator, onEnded }: UseWebRTCOpt
           clearTimeout(iceDisconnectedTimer.current)
           iceDisconnectedTimer.current = null
         }
-      } else if (state === 'failed') {
+      } else if (state === 'failed' || state === 'closed') {
         terminate(true)
       }
     }
 
     pc.onconnectionstatechange = () => {
       console.log('[WebRTC] connectionState:', pc.connectionState)
-      if (pc.connectionState === 'failed') terminate(true)
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') terminate(true)
     }
 
     pcRef.current = pc

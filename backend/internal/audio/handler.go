@@ -122,7 +122,7 @@ func NewMLClient(socketPath string) *http.Client {
 		}
 	}
 	return &http.Client{
-		Timeout:   30 * time.Second,
+		Timeout:   120 * time.Second, // 120s covers Modal cold start on first request
 		Transport: transport,
 	}
 }

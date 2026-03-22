@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useWebSocketContext, useWebSocketEvent } from '../context/WebSocketContext'
+import { useUILang } from '../context/UILangContext'
 
 export interface IncomingCall {
   callId: string
@@ -14,6 +15,7 @@ interface Props {
 
 export default function IncomingCallModal({ onAccept, onDecline }: Props) {
   const { send } = useWebSocketContext()
+  const { T } = useUILang()
   const [incoming, setIncoming] = useState<IncomingCall | null>(null)
 
   useWebSocketEvent('call_incoming', (data) => {
@@ -55,20 +57,20 @@ export default function IncomingCallModal({ onAccept, onDecline }: Props) {
         </div>
         <div className="text-center">
           <p className="text-white font-semibold text-lg">{incoming.fromName}</p>
-          <p className="text-gray-400 text-sm mt-1">Incoming video call…</p>
+          <p className="text-gray-400 text-sm mt-1">{T.incomingCall}</p>
         </div>
         <div className="flex gap-3 w-full">
           <button
             onClick={handleDecline}
             className="flex-1 bg-red-600 hover:bg-red-500 active:bg-red-700 text-white rounded-xl py-4 font-medium transition-colors text-base"
           >
-            Decline
+            {T.declineCall}
           </button>
           <button
             onClick={handleAccept}
             className="flex-1 bg-green-600 hover:bg-green-500 active:bg-green-700 text-white rounded-xl py-4 font-medium transition-colors text-base"
           >
-            Accept
+            {T.answerCall}
           </button>
         </div>
       </div>

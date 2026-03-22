@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { WebSocketProvider } from './context/WebSocketContext'
+import { UILangProvider } from './context/UILangContext'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
@@ -47,6 +48,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
+    <UILangProvider>
     <AuthProvider>
       <WebSocketProvider>
       <BrowserRouter>
@@ -67,5 +69,6 @@ export default function App() {
       </BrowserRouter>
       </WebSocketProvider>
     </AuthProvider>
+    </UILangProvider>
   )
 }

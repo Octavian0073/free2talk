@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import type { PublicUser, SearchResult, IncomingRequest } from '../types'
 import { LANGUAGES } from '../types'
 import { api } from '../api/client'
+import { useUILang } from '../context/UILangContext'
 
 interface Props {
   friends: PublicUser[]
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export default function ConversationSidebar({ friends, friendsLoading, selectedId, unreadCounts, onSelect, onFriendAccepted }: Props) {
+  const { T } = useUILang()
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
@@ -21,12 +23,10 @@ export default function ConversationSidebar({ friends, friendsLoading, selectedI
   const [pendingUsernames, setPendingUsernames] = useState<Set<string>>(new Set())
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Load incoming friend requests on mount.
   useEffect(() => {
     api.getFriendRequests().then(setRequests).catch(console.error)
   }, [])
 
-  // Debounced search: fires 400ms after the user stops typing.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     if (!query.trim()) {
@@ -48,17 +48,14 @@ export default function ConversationSidebar({ friends, friendsLoading, selectedI
   }, [query])
 
   const handleAddFriend = async (username: string) => {
-    // Optimistic update — button shows "Requested" immediately.
     setPendingUsernames(prev => new Set([...prev, username]))
     try {
       await api.sendFriendRequest(username)
     } catch (err) {
-      // Roll back optimistic state only if the request itself failed.
       setPendingUsernames(prev => { const s = new Set(prev); s.delete(username); return s })
       console.error('friend request failed:', err)
       return
     }
-    // Refresh results after success — errors here don't affect the button state.
     try {
       const res = await api.searchUsers(query.trim())
       setSearchResults(res)
@@ -96,7 +93,7 @@ export default function ConversationSidebar({ friends, friendsLoading, selectedI
           type="text"
           value={query}
           onChange={e => setQuery(e.target.value)}
-          placeholder="Search @username to add friends"
+          placeholder={T.searchPlaceholder}
           className="w-full bg-gray-800 text-sm text-white rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500 placeholder-gray-500"
         />
       </div>
@@ -107,7 +104,7 @@ export default function ConversationSidebar({ friends, friendsLoading, selectedI
           onClick={() => setShowRequests(v => !v)}
           className="flex items-center justify-between px-4 py-2 text-xs text-indigo-400 hover:bg-gray-800 transition-colors border-b border-gray-800"
         >
-          <span>Friend requests ({requests.length})</span>
+          <span>{T.friendRequests} ({requests.length})</span>
           <span>{showRequests ? '▲' : '▼'}</span>
         </button>
       )}
@@ -128,13 +125,13 @@ export default function ConversationSidebar({ friends, friendsLoading, selectedI
                 onClick={() => handleAccept(req)}
                 className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded transition-colors"
               >
-                Accept
+                {T.accept}
               </button>
               <button
                 onClick={() => handleDecline(req)}
                 className="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-2 py-1 rounded transition-colors"
               >
-                Decline
+                {T.decline}
               </button>
             </li>
           ))}
@@ -145,10 +142,10 @@ export default function ConversationSidebar({ friends, friendsLoading, selectedI
       {isSearching ? (
         <ul className="flex-1 overflow-y-auto">
           {searching && (
-            <li className="px-4 py-3 text-xs text-gray-600">Searching…</li>
+            <li className="px-4 py-3 text-xs text-gray-600">{T.searching}</li>
           )}
           {!searching && searchResults.length === 0 && (
-            <li className="px-4 py-3 text-xs text-gray-600">No users found.</li>
+            <li className="px-4 py-3 text-xs text-gray-600">{T.noUsersFound}</li>
           )}
           {searchResults.map(result => {
             const lang = LANGUAGES.find(l => l.code === result.language_code)
@@ -171,14 +168,13 @@ export default function ConversationSidebar({ friends, friendsLoading, selectedI
           })}
         </ul>
       ) : (
-        /* Friends list */
         <ul className="flex-1 overflow-y-auto">
           {friendsLoading && friends.length === 0 ? (
-            <li className="px-4 py-6 text-xs text-gray-600 text-center">Loading…</li>
+            <li className="px-4 py-6 text-xs text-gray-600 text-center">{T.loading}</li>
           ) : friends.length === 0 ? (
             <li className="flex flex-col items-center justify-center text-center px-6 py-10 gap-2">
-              <p className="text-gray-600 text-sm">No friends yet.</p>
-              <p className="text-gray-700 text-xs">Search by @username above to add friends.</p>
+              <p className="text-gray-600 text-sm">{T.noFriendsYet}</p>
+              <p className="text-gray-700 text-xs">{T.noFriendsHint}</p>
             </li>
           ) : (
             friends.map(friend => {
@@ -193,7 +189,6 @@ export default function ConversationSidebar({ friends, friendsLoading, selectedI
                       active ? 'bg-gray-800' : ''
                     }`}
                   >
-                    {/* Avatar with unread dot */}
                     <div className="relative flex-shrink-0">
                       <div className="w-10 h-10 rounded-full bg-indigo-700 flex items-center justify-center text-sm font-semibold select-none">
                         {friend.display_name[0].toUpperCase()}
@@ -202,15 +197,12 @@ export default function ConversationSidebar({ friends, friendsLoading, selectedI
                         <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-indigo-400 rounded-full border-2 border-gray-900" />
                       )}
                     </div>
-
                     <div className="flex-1 min-w-0">
                       <p className={`text-sm truncate ${unread > 0 && !active ? 'font-bold text-white' : 'font-medium'}`}>
                         {friend.display_name}
                       </p>
                       <p className="text-xs text-gray-500 truncate">@{friend.username} · {lang?.flag} {lang?.label}</p>
                     </div>
-
-                    {/* Unread count badge */}
                     {unread > 0 && !active && (
                       <span className="flex-shrink-0 min-w-[20px] h-5 bg-indigo-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center px-1.5">
                         {unread > 99 ? '99+' : unread}
@@ -234,21 +226,22 @@ interface FriendActionButtonProps {
 }
 
 function FriendActionButton({ status, username, onAdd }: FriendActionButtonProps) {
+  const { T } = useUILang()
   if (status === 'accepted') {
-    return <span className="text-xs text-gray-500">Friends</span>
+    return <span className="text-xs text-gray-500">{T.friends}</span>
   }
   if (status === 'pending_sent') {
-    return <span className="text-xs text-indigo-400 bg-indigo-950 px-2 py-1 rounded-full">Requested</span>
+    return <span className="text-xs text-indigo-400 bg-indigo-950 px-2 py-1 rounded-full">{T.requested}</span>
   }
   if (status === 'pending_received') {
-    return <span className="text-xs text-indigo-400">Check requests</span>
+    return <span className="text-xs text-indigo-400">{T.checkRequests}</span>
   }
   return (
     <button
       onClick={() => onAdd(username)}
       className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded transition-colors flex-shrink-0"
     >
-      Add
+      {T.add}
     </button>
   )
 }

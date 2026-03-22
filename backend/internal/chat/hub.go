@@ -153,9 +153,22 @@ func (c *Client) writePump(h *Hub) {
 }
 
 func (c *Client) readPump(h *Hub) {
+	// lastSignalingPeer tracks the most recent peer this client exchanged
+	// signaling messages with. On abrupt disconnect (e.g. phone closes app
+	// without sending call_hangup), we deliver a synthetic hangup to that
+	// peer so their UI closes the call overlay automatically.
+	var lastSignalingPeer string
+
 	defer func() {
 		h.unregister <- c
 		c.conn.Close()
+		if lastSignalingPeer != "" {
+			payload, _ := json.Marshal(map[string]any{
+				"type":    "call_hangup",
+				"from_id": c.userID,
+			})
+			h.Deliver(lastSignalingPeer, payload)
+		}
 	}()
 
 	c.conn.SetReadLimit(maxMessageSize)
@@ -210,5 +223,6 @@ func (c *Client) readPump(h *Hub) {
 		// SECURITY: from_id is set here from the authenticated client's userID.
 		// The client cannot supply a different from_id to impersonate another user.
 		h.Route(c.userID, header.To, raw)
+		lastSignalingPeer = header.To
 	}
 }

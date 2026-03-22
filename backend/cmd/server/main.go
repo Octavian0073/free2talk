@@ -64,11 +64,9 @@ func main() {
 	callHandler := &call.Handler{DB: pool, Hub: hub}
 
 	// ML service connection — Unix socket preferred (no TCP overhead).
-	// Set ML_SOCKET_PATH="" to fall back to TCP via ML_SERVICE_URL.
+	// ML_SOCKET_PATH — if set, Go dials the ML service over a Unix socket (local dev).
+	// Leave unset or empty to use plain HTTPS via ML_SERVICE_URL (Modal / production).
 	mlSocketPath := os.Getenv("ML_SOCKET_PATH")
-	if mlSocketPath == "" {
-		mlSocketPath = "/tmp/free2talk-ml.sock"
-	}
 	mlURL := os.Getenv("ML_SERVICE_URL")
 	if mlURL == "" {
 		mlURL = "http://localhost"
@@ -100,6 +98,61 @@ func main() {
 	// Health check (unauthenticated, used by infra probes)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
+	})
+
+	// ML warmup — streams SSE events while waiting for the Modal container.
+	// Sends a "warming" event every second with elapsed time, then a "ready"
+	// event (or "error") when Modal /health responds. The frontend reads this
+	// stream so the user sees live elapsed seconds instead of a dead spinner.
+	r.With(mw.Auth(pool), mw.AdminOnly(pool)).Get("/api/ml/warmup", func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming not supported", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		// Ping Modal in the background.
+		done := make(chan error, 1)
+		go func() {
+			req, err := http.NewRequest(http.MethodGet, mlURL+"/health", nil)
+			if err != nil {
+				done <- err
+				return
+			}
+			resp, err := mlClient.Do(req)
+			if err != nil {
+				done <- err
+				return
+			}
+			resp.Body.Close()
+			done <- nil
+		}()
+
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		start := time.Now()
+
+		for {
+			select {
+			case err := <-done:
+				elapsed := int(time.Since(start).Seconds())
+				if err != nil {
+					fmt.Fprintf(w, "event: error\ndata: {\"elapsed\":%d}\n\n", elapsed)
+				} else {
+					fmt.Fprintf(w, "event: ready\ndata: {\"elapsed\":%d}\n\n", elapsed)
+				}
+				flusher.Flush()
+				return
+			case <-ticker.C:
+				fmt.Fprintf(w, "event: warming\ndata: {\"elapsed\":%d}\n\n", int(time.Since(start).Seconds()))
+				flusher.Flush()
+			case <-r.Context().Done():
+				return
+			}
+		}
 	})
 
 	// Auth endpoints — rate limited to 10 requests per IP per minute.

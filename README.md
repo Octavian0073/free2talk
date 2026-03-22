@@ -64,27 +64,25 @@ docker compose up -d postgres libretranslate
 
 LibreTranslate downloads language models on first start (~500MB). Wait until it prints `Running on http://0.0.0.0:5000` before starting the backend.
 
-### 3. Set up the ML service
+### 3. Deploy the ML service (Modal)
+
+The ML service runs on [Modal](https://modal.com) (serverless GPU). Deploy it once:
 
 ```bash
 cd ml-service
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+pip install modal
+modal deploy modal_app.py
 ```
 
-The faster-whisper model downloads automatically on first startup (~500MB for `small`).
-
-### 4. Start the ML service
-
+Copy the deployed URL printed by Modal and set it in `.env`:
 ```bash
-# From ml-service/ with venv active
-uvicorn main:app --uds /tmp/free2talk-ml.sock
+ML_SERVICE_URL=https://octavian0073--free2talk-ml-<hash>.modal.run
 ```
 
-> **Important:** Always use `--uds /tmp/free2talk-ml.sock`. The Go backend connects via Unix socket at that path. Running with plain TCP (`python main.py` or `--port 8090`) means the socket file never exists and all transcription silently fails.
+**HuggingFace token (optional but recommended):** Speeds up the first NLLB-200-3.3B download (~6.6GB).
+Create a secret named `huggingface` in Modal's dashboard with key `HF_TOKEN`.
 
-Wait for: `ML service ready.`
+**Warming up:** The first call after a cold start takes 60–120s for the container to spin up and load models. Use the admin warmup button in the app to pre-warm before a call.
 
 ### 5. Start the backend
 
@@ -115,7 +113,7 @@ npm run dev
 
 ```
 Terminal 1:  docker compose up -d postgres libretranslate
-Terminal 2:  cd ml-service && source .venv/bin/activate && uvicorn main:app --uds /tmp/free2talk-ml.sock
+Terminal 2:  modal deploy ml-service/modal_app.py   # one-time deploy; runs on Modal GPU
 Terminal 3:  cd backend && make run
 Terminal 4:  cd frontend && npm run dev
 ```
@@ -173,8 +171,7 @@ Then select VirtualMic0.monitor as the microphone in the browser.
 | `DATABASE_URL` | — | PostgreSQL connection string |
 | `JWT_SECRET` | — | HS256 signing secret, minimum 32 chars |
 | `LIBRETRANSLATE_URL` | `http://localhost:5000` | LibreTranslate instance URL |
-| `ML_SOCKET_PATH` | `/tmp/free2talk-ml.sock` | Unix socket path to ml-service |
-| `ML_SERVICE_URL` | `http://localhost:8090` | TCP fallback if ML_SOCKET_PATH unset |
+| `ML_SERVICE_URL` | — | Modal deployment URL (e.g. `https://octavian0073--free2talk-ml-*.modal.run`) |
 | `DEV_MODE` | `false` | Set `true` for local dev (loosens CORS/origin checks) |
 
 ---
@@ -184,14 +181,14 @@ Then select VirtualMic0.monitor as the microphone in the browser.
 | Layer | Technology |
 |---|---|
 | Backend | Go 1.22, chi router, gorilla/websocket, pgx |
-| ML service | Python 3.11, FastAPI, faster-whisper, CTranslate2 |
+| ML service | Python 3.11, FastAPI, faster-whisper, Hugging Face Transformers (NLLB-200-3.3B); deployed on Modal T4 GPU |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
 | Database | PostgreSQL 16 |
 | Translation (chat) | LibreTranslate (self-hosted Docker, OPUS-MT) |
 | Audio capture | AudioWorklet (browser), raw Int16 PCM at 16 kHz |
 | VAD | Go RMS energy VAD (pure math, no ML) |
-| STT (captions) | faster-whisper `small`, int8 |
-| Translation (captions) | NLLB-200 distilled 600M, int8 (in-process) |
+| STT (captions) | faster-whisper `large-v3`, GPU (Modal) |
+| Translation (captions) | NLLB-200-3.3B (`facebook/nllb-200-3.3B`), GPU (Modal) |
 | Auth | JWT HS256, 24h expiry |
 | Video | WebRTC (browser-native, STUN only) |
 

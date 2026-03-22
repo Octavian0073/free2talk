@@ -6,6 +6,7 @@ import type { PublicUser, Message } from '../types'
 import { api } from '../api/client'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useWebSocketContext, useWebSocketEvent } from '../context/WebSocketContext'
+import { useUILang } from '../context/UILangContext'
 import ConversationSidebar from '../components/ConversationSidebar'
 import ConversationPane from '../components/ConversationPane'
 import IncomingCallModal from '../components/IncomingCallModal'
@@ -22,13 +23,27 @@ interface ActiveCall {
 export default function ChatApp() {
   const { user, logout } = useAuth()
   const { send } = useWebSocketContext()
+  const { T, lang, toggle } = useUILang()
   const [friends, setFriends] = useState<PublicUser[]>([])
   const [friendsLoading, setFriendsLoading] = useState(true)
   const [selectedContact, setSelectedContact] = useState<PublicUser | null>(null)
   const [messageMap, setMessageMap] = useState<Record<string, Message[]>>({})
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null)
-  const lang = LANGUAGES.find(l => l.code === user?.language_code)
+  const [warmupState, setWarmupState] = useState<'idle' | 'warming' | 'ready'>('idle')
+  const [warmupSecs, setWarmupSecs] = useState(0)
+  const userLang = LANGUAGES.find(l => l.code === user?.language_code)
+
+  const handleWarmup = useCallback(() => {
+    setWarmupState('warming')
+    setWarmupSecs(0)
+    api.warmupML((elapsed) => setWarmupSecs(elapsed))
+      .then(() => {
+        setWarmupState('ready')
+        setTimeout(() => setWarmupState('idle'), 5000)
+      })
+      .catch(() => setWarmupState('idle'))
+  }, [])
 
   // Ref so that handleIncomingMessage (stable useCallback) can read the
   // latest selected contact without being re-created on every selection change.
@@ -129,17 +144,40 @@ export default function ChatApp() {
             <div>
               <p className="text-sm font-medium leading-tight">{user?.display_name}</p>
               <p className="text-xs text-gray-500">
-                @{user?.username} · {lang?.flag} {lang?.label}
+                @{user?.username} · {userLang?.flag} {userLang?.label}
               </p>
             </div>
           </Link>
-          <button
-            onClick={logout}
-            title="Sign out"
-            className="text-gray-500 hover:text-gray-300 transition-colors text-xs px-2 py-1 rounded"
-          >
-            Sign out
-          </button>
+          <div className="flex items-center gap-1">
+            {user?.is_admin && <button
+              onClick={handleWarmup}
+              disabled={warmupState === 'warming'}
+              title={T.warmupTitle}
+              className={`text-xs px-2 py-1 rounded transition-colors ${
+                warmupState === 'ready'
+                  ? 'text-green-400'
+                  : warmupState === 'warming'
+                  ? 'text-yellow-400 cursor-wait'
+                  : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              {warmupState === 'ready' ? '✓ Ready' : warmupState === 'warming' ? `Warming… ${warmupSecs}s` : '🔥'}
+            </button>}
+            <button
+              onClick={toggle}
+              title="Switch UI language"
+              className="text-gray-500 hover:text-gray-300 transition-colors text-xs px-2 py-1 rounded"
+            >
+              {lang === 'en' ? '日本語' : 'EN'}
+            </button>
+            <button
+              onClick={logout}
+              title={T.signOut}
+              className="text-gray-500 hover:text-gray-300 transition-colors text-xs px-2 py-1 rounded"
+            >
+              {T.signOut}
+            </button>
+          </div>
         </div>
 
         <ConversationSidebar
@@ -196,6 +234,7 @@ export default function ChatApp() {
 }
 
 function EmptyState() {
+  const { T } = useUILang()
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center gap-4 bg-gray-900">
       <div className="w-20 h-20 rounded-full bg-gray-800 flex items-center justify-center text-4xl select-none">
@@ -203,8 +242,8 @@ function EmptyState() {
       </div>
       <div>
         <p className="text-xl font-semibold text-white">free2talk</p>
-        <p className="text-gray-500 text-sm mt-1">Select a conversation to start talking.</p>
-        <p className="text-gray-600 text-xs mt-3">Messages are translated in real time.</p>
+        <p className="text-gray-500 text-sm mt-1">{T.selectConversation}</p>
+        <p className="text-gray-600 text-xs mt-3">{T.translatedRealTime}</p>
       </div>
     </div>
   )

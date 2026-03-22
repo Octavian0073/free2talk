@@ -28,6 +28,12 @@ func Auth(db *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			header := r.Header.Get("Authorization")
+			// EventSource cannot send headers — allow token via query param as fallback.
+			if !strings.HasPrefix(header, "Bearer ") {
+				if t := r.URL.Query().Get("token"); t != "" {
+					header = "Bearer " + t
+				}
+			}
 			if !strings.HasPrefix(header, "Bearer ") {
 				http.Error(w, "missing or invalid authorization header", http.StatusUnauthorized)
 				return

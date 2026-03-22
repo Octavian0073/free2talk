@@ -1,6 +1,9 @@
 import { Link } from 'react-router-dom'
+import { useUILang } from '../context/UILangContext'
 
 export default function Landing() {
+  const { T, lang, toggle } = useUILang()
+
   return (
     <div className="min-h-dvh bg-gray-950 text-white flex flex-col">
 
@@ -8,17 +11,23 @@ export default function Landing() {
       <header className="flex items-center justify-between px-6 py-4 border-b border-gray-800/60">
         <span className="text-lg font-bold tracking-tight text-white">free2talk</span>
         <div className="flex items-center gap-2">
+          <button
+            onClick={toggle}
+            className="text-xs text-gray-500 hover:text-gray-300 px-2 py-1 rounded transition-colors"
+          >
+            {lang === 'en' ? '日本語' : 'EN'}
+          </button>
           <Link
             to="/login"
             className="text-sm text-gray-400 hover:text-white px-4 py-2 rounded-lg transition-colors"
           >
-            Sign in
+            {T.signIn}
           </Link>
           <Link
             to="/register"
             className="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
           >
-            Get started
+            {T.getStarted}
           </Link>
         </div>
       </header>

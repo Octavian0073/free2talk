@@ -3,7 +3,7 @@
 ## Current Phase: Phase 5 — Polish & Stability (in progress)
 ## Last Completed Phase: Phase 4 — Live Translated Captions ✅
 
-## Last Session: 2026-03-21 (session 3)
+## Last Session: 2026-03-22 (session 4)
 
 ---
 
@@ -107,6 +107,28 @@
 - [x] `ml-service/main.py` + `stt.py` restored to whisper+NLLB only (no Seamless)
 - [x] End-chunk repetition eliminated — Whisper now receives complete utterances
 - [x] Caption latency massively improved — text appears in ~1s after utterance ends
+
+#### Completed this session (2026-03-22 session 4) — Modal GPU, NLLB-3.3B, Japanese UI
+- [x] Migrated ML service from local uvicorn to **Modal serverless GPU** (T4)
+  - `modal_app.py` replaces `main.py` + `stt.py` — single-file deployment
+  - `startup_timeout=1200`, `scaledown_window=300`, `@modal.concurrent(max_inputs=4)`
+  - HuggingFace token support via Modal secret (`huggingface`) + `hf-transfer` for fast downloads
+- [x] Replaced Qwen 1.5B translation with **NLLB-200-3.3B** (`facebook/nllb-200-3.3B`)
+  - `forced_bos_token_id` via `convert_tokens_to_ids` (fixed `TokenizersBackend` attribute error)
+  - `no_repeat_ngram_size=4`, `repetition_penalty=1.3` — eliminates repetition loops
+  - NLLB language codes: `eng_Latn`, `ron_Latn`, `jpn_Jpan`
+- [x] Admin-only ML warmup endpoint (`GET /api/ml/warmup`)
+  - SSE streaming — sends `warming` events every second with elapsed time, `ready` event on success
+  - EventSource token query-param fallback in `middleware/auth.go` (EventSource can't send headers)
+  - Frontend: `api.warmupML(onTick)` returns `Promise<void>`, live `Warming… Xs` counter on button
+  - Warmup button hidden from non-admin users
+- [x] Suppressed native browser video controls (play/pause overlay on mobile)
+  - Global CSS in `index.css`: `::-webkit-media-controls` with `display: none !important`
+- [x] **Japanese UI language toggle** — full app i18n (EN/JA)
+  - New: `src/i18n/index.ts` — `as const` translations object, 50+ keys, function-valued interpolations
+  - New: `src/context/UILangContext.tsx` — `UILangProvider` with localStorage persistence (`ui_lang`)
+  - Updated: Landing, Login, Register, Profile, ChatApp, ConversationSidebar, ConversationPane, CallOverlay, IncomingCallModal
+  - Toggle button (`日本語`/`EN`) on every page
 
 #### Remaining Phase 5 tasks
 - [ ] Tune VAD thresholds (`speechRMSMin`, `silenceToFlush`) for different mic environments
@@ -232,9 +254,9 @@ navigator.mediaDevices.getUserMedia = async () => {
 - WebSocket: gorilla/websocket
 - WS token transport: ?token= query param (browser WS API cannot set custom headers)
 - WebRTC signaling: browser-native RTCPeerConnection + Go Hub relay
-- ML service: Python, FastAPI, faster-whisper + CTranslate2 + NLLB-200 (Phase 4)
+- ML service: Python, FastAPI, faster-whisper + HF Transformers NLLB-200-3.3B; deployed on Modal T4 GPU
 - Chat translation: LibreTranslate (self-hosted Docker, localhost:5000)
-- Caption translation: NLLB-200 distilled 600M, int8 quantized (in-process, Python)
+- Caption translation: NLLB-200-3.3B (`facebook/nllb-200-3.3B`) on Modal GPU
 - Frontend: React 18 + TypeScript + Vite + Tailwind, port 5173
 - Database: PostgreSQL 16
 - Auth: JWT HS256, 24h expiry, is_admin NOT in token

@@ -3,9 +3,11 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../api/client'
 import { LANGUAGES } from '../types'
+import { useUILang } from '../context/UILangContext'
 
 export default function Register() {
   const { login } = useAuth()
+  const { T, lang, toggle } = useUILang()
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -35,43 +37,46 @@ export default function Register() {
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
+      <button onClick={toggle} className="fixed top-4 right-4 text-xs text-gray-500 hover:text-gray-300 px-2 py-1 rounded transition-colors">
+        {lang === 'en' ? '日本語' : 'EN'}
+      </button>
       <div className="w-full max-w-md">
         <h1 className="text-3xl font-bold text-white text-center mb-1">free2talk</h1>
-        <p className="text-gray-500 text-center mb-8 text-sm">Talk to anyone, in any language.</p>
+        <p className="text-gray-500 text-center mb-8 text-sm">{T.appTagline}</p>
 
         <form onSubmit={handleSubmit} className="bg-gray-800 rounded-2xl p-8 space-y-5">
-          <h2 className="text-xl font-semibold text-white">Create account</h2>
+          <h2 className="text-xl font-semibold text-white">{T.createAccount}</h2>
 
           {error && (
             <p className="text-red-400 text-sm bg-red-900/20 rounded-lg px-3 py-2">{error}</p>
           )}
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Registration key</label>
+            <label className="block text-sm text-gray-400 mb-1">{T.registrationKey}</label>
             <input
               type="password"
               value={form.registration_key}
               onChange={e => set('registration_key', e.target.value)}
               required
               className="w-full bg-gray-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500"
-              placeholder="Enter your invite key"
+              placeholder={T.inviteKeyPlaceholder}
             />
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Display name</label>
+            <label className="block text-sm text-gray-400 mb-1">{T.displayName}</label>
             <input
               type="text"
               value={form.display_name}
               onChange={e => set('display_name', e.target.value)}
               required
               className="w-full bg-gray-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500"
-              placeholder="Your name"
+              placeholder={T.displayNamePlaceholder}
             />
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Username</label>
+            <label className="block text-sm text-gray-400 mb-1">{T.username}</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 select-none">@</span>
               <input
@@ -82,26 +87,26 @@ export default function Register() {
                 minLength={3}
                 maxLength={20}
                 className="w-full bg-gray-700 text-white rounded-lg pl-7 pr-4 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500"
-                placeholder="e.g. alice_99"
+                placeholder={T.usernamePlaceholder}
               />
             </div>
-            <p className="text-xs text-gray-600 mt-1">3–20 chars: lowercase letters, digits, underscores</p>
+            <p className="text-xs text-gray-600 mt-1">{T.usernameHint}</p>
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Email</label>
+            <label className="block text-sm text-gray-400 mb-1">{T.email}</label>
             <input
               type="email"
               value={form.email}
               onChange={e => set('email', e.target.value)}
               required
               className="w-full bg-gray-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500"
-              placeholder="you@example.com"
+              placeholder={T.emailPlaceholder}
             />
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Password</label>
+            <label className="block text-sm text-gray-400 mb-1">{T.password}</label>
             <input
               type="password"
               value={form.password}
@@ -109,12 +114,12 @@ export default function Register() {
               required
               minLength={8}
               className="w-full bg-gray-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500"
-              placeholder="Min. 8 characters"
+              placeholder={T.passwordPlaceholder}
             />
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-2">Your language</label>
+            <label className="block text-sm text-gray-400 mb-2">{T.yourLanguage}</label>
             <div className="grid grid-cols-3 gap-2">
               {LANGUAGES.map(lang => (
                 <button
@@ -138,13 +143,13 @@ export default function Register() {
             disabled={loading}
             className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium rounded-lg py-2.5 transition-colors"
           >
-            {loading ? 'Creating account...' : 'Create account'}
+            {loading ? T.creatingAccount : T.createAccount}
           </button>
 
           <p className="text-gray-400 text-sm text-center">
-            Already have an account?{' '}
+            {T.alreadyHaveAccount}{' '}
             <Link to="/login" className="text-indigo-400 hover:text-indigo-300">
-              Sign in
+              {T.signIn}
             </Link>
           </p>
         </form>
