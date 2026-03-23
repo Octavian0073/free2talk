@@ -4,7 +4,7 @@ import t, { type UILang } from '../i18n'
 
 interface UILangContextValue {
   lang: UILang
-  T: typeof t['en']
+  T: typeof t[UILang]
   toggle: () => void
 }
 
