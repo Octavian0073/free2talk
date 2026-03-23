@@ -22,19 +22,9 @@ Real-time multilingual video calling with live translated captions. Two users sp
 | Tool | Version | Notes |
 |---|---|---|
 | Go | 1.22+ | Backend |
-| Node.js | 18+ | Frontend |
-| Python | 3.11+ | ML service |
+| Node.js | 20+ | Frontend |
 | Docker + Compose | any recent | PostgreSQL + LibreTranslate |
-| ffmpeg | any | Required by faster-whisper for WAV/audio decoding |
-
-Install ffmpeg on Arch/Ubuntu:
-```bash
-# Arch
-sudo pacman -S ffmpeg
-
-# Ubuntu/Debian
-sudo apt install ffmpeg
-```
+| Modal account | — | ML service runs on Modal serverless GPU (no local GPU needed) |
 
 ---
 
@@ -201,10 +191,33 @@ Then select VirtualMic0.monitor as the microphone in the browser.
 
 ---
 
+## Production deployment
+
+The live instance runs at **https://free2talk.live** on an OVHCloud VPS (Ubuntu 22.04):
+
+- Nginx reverse proxies `/api/*`, `/ws`, `/ws/audio`, `/health` to the Go backend on `127.0.0.1:8000`
+- TLS via Let's Encrypt (certbot, auto-renewal)
+- Coturn TURN server on ports 3478/5349 with HMAC-SHA1 time-limited credentials
+- PostgreSQL and LibreTranslate in Docker, bound to localhost only
+- Go backend runs as a systemd service with auto-restart
+- ML service deployed on Modal T4 GPU — cold start ~60–120s, warm requests ~1s
+- Daily DB backups to `~/backups_sql/`
+
+To deploy an update:
+```bash
+cd ~/free2talk
+git pull
+cd backend && go build -o free2talk-server ./cmd/server/
+sudo systemctl restart free2talk
+cd ../frontend && npm run build
+sudo cp -r dist/* /var/www/free2talk/
+```
+
+---
+
 ## Known limitations
 
-- **TURN server** — Backend generates time-limited HMAC credentials at `GET /api/turn-credentials`. Set `TURN_HOST` + `TURN_SECRET` (matches Coturn `use-auth-secret`). Falls back to Google STUN if unset.
-- **STUN servers** — Google's public STUN (`stun.l.google.com:19302`) is used. Replace with your own in production.
-- **Self-signed TLS** — Vite's `@vitejs/plugin-basic-ssl` is used for local dev. Production needs a real certificate (Let's Encrypt via certbot).
+- **Cold start latency** — Modal GPU container takes 60–120s to warm up after inactivity. Use the admin warmup button before a call.
 - **No refresh tokens** — JWTs expire after 24h. Users must log in again.
 - **No DB migrations tool** — schema changes require manual `ALTER TABLE`.
+- **WebRTC NAT traversal** — TURN server is configured. Users behind symmetric NAT should be able to connect.
