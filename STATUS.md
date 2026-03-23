@@ -150,15 +150,25 @@
 - [ ] Graceful degradation: STT/caption failure → silent, no crash
 - [ ] Production build test (`npm run build`, verify no source exposure)
 
-#### VPS deployment checklist (next phase)
-- [ ] DNS A record pointing to VPS IP
-- [ ] Nginx — reverse proxy: static frontend + `/api/*` + `/ws/*` to backend port 8000
-- [ ] TLS — Let's Encrypt via certbot, auto-renewal
-- [ ] Coturn — install, configure `use-auth-secret`, open ports 3478/5349/49152-65535 UDP
-- [ ] systemd unit for Go backend (auto-restart on crash/reboot)
-- [ ] `npm run build` → copy `dist/` to Nginx web root
-- [ ] Production `.env`: `APP_ORIGIN=https://free2talk.live`, `TURN_HOST=free2talk.live`, `TURN_SECRET`, `JWT_SECRET`, `DATABASE_URL`, `ML_SERVICE_URL`, no `DEV_MODE`
-- [ ] Set `is_admin=true` for first admin user via psql
+#### VPS deployment checklist ✅ COMPLETE (2026-03-23)
+- [x] OVHCloud VPS — Ubuntu 22.04 LTS, IP: 57.129.126.160
+- [x] SSH hardening — key-only (`free2talk` key), root login disabled, fail2ban, UFW
+- [x] DNS A record → 57.129.126.160 (Cloudflare, DNS-only)
+- [x] Stack installed — Go 1.22.4, Node 20, Docker, Nginx 1.24, Coturn, Certbot
+- [x] TLS — Let's Encrypt via certbot, auto-renewal for free2talk.live
+- [x] Nginx — reverse proxy: static frontend + `/api/*` + `/ws` + `/ws/audio` + `/health`
+- [x] Coturn — configured with `use-auth-secret`, HMAC-SHA1, ports 3478/5349/49152-65535 open
+- [x] PostgreSQL — Docker, localhost-only (127.0.0.1:5432), schema + migrations applied
+- [x] LibreTranslate — Docker, localhost-only (127.0.0.1:5000), EN/RO/JA models
+- [x] systemd unit for Go backend — auto-restart on crash/reboot
+- [x] `npm run build` → `/var/www/free2talk/`
+- [x] Production `.env` — `APP_ORIGIN`, `TURN_HOST`, `TURN_SECRET`, `JWT_SECRET`, `DATABASE_URL`, `ML_SERVICE_URL`, no `DEV_MODE`
+- [x] Admin user created via psql — samuraiu / samura1u@proton.me / is_admin=true
+- [x] Ports secured — 5432, 5000, 8000 UFW denied externally
+- [x] Daily DB backup cron — 2am → `/home/free2talk/backups_sql/`
+- [x] Git-based deployment — repo cloned from GitHub, code updates via `git pull` + rebuild
+- [x] `ml-service/` removed from VPS — ML runs on Modal GPU
+- [x] docker-compose.yml — ml-service block removed, ports bound to localhost
 
 ---
 
