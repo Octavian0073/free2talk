@@ -5,7 +5,6 @@
 html, body, #root {
   height: 100%;
   background-color: #111827; /* gray-900 */
-  overflow: hidden;
 }
 
 /* Hide native browser video controls on all video elements (mobile Safari, Chrome Android) */
