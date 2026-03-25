@@ -13,7 +13,7 @@ import os
 from contextlib import asynccontextmanager
 
 import ctranslate2
-import sentencepiece as spm
+from transformers import NllbTokenizer
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -21,7 +21,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 # NLLB language codes for the languages free2talk supports.
-# Add more as needed — full list: https://github.com/facebookresearch/flores/blob/main/flores200/README.md
 LANG_MAP: dict[str, str] = {
     "en": "eng_Latn",
     "ja": "jpn_Jpan",
@@ -39,14 +38,13 @@ LANG_MAP: dict[str, str] = {
 
 MODEL_DIR = os.getenv("MODEL_DIR", "nllb-600m-ct2")
 
-# Module-level globals — loaded once at startup.
 _translator: ctranslate2.Translator | None = None
-_sp: spm.SentencePieceProcessor | None = None
+_tokenizer: NllbTokenizer | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _translator, _sp
+    global _translator, _tokenizer
     log.info("Loading NLLB model from %s ...", MODEL_DIR)
     _translator = ctranslate2.Translator(
         MODEL_DIR,
@@ -54,8 +52,8 @@ async def lifespan(app: FastAPI):
         inter_threads=int(os.getenv("INTER_THREADS", "2")),
         intra_threads=int(os.getenv("INTRA_THREADS", "2")),
     )
-    _sp = spm.SentencePieceProcessor()
-    _sp.Load(os.path.join(MODEL_DIR, "sentencepiece.bpe.model"))
+    # Load tokenizer from local dir (saved by download_model.py — no network call).
+    _tokenizer = NllbTokenizer.from_pretrained(MODEL_DIR, local_files_only=True)
     log.info("Model ready.")
     yield
     log.info("Shutting down translate-service.")
@@ -82,7 +80,6 @@ def health():
 
 @app.post("/translate", response_model=TranslateResponse)
 def translate(req: TranslateRequest) -> TranslateResponse:
-    # Pass-through if same language.
     if req.source == req.target:
         return TranslateResponse(translatedText=req.q)
 
@@ -95,12 +92,15 @@ def translate(req: TranslateRequest) -> TranslateResponse:
             detail=f"Unsupported language pair: {req.source!r} → {req.target!r}",
         )
 
-    if not _translator or not _sp:
+    if not _translator or not _tokenizer:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    # Tokenise with the source language prefix.
-    tokens = [src_lang] + _sp.Encode(req.q, out_type=str)
+    # Tokenise with the correct source language — NllbTokenizer prepends
+    # the src_lang token and appends </s> automatically.
+    _tokenizer.src_lang = src_lang
+    tokens = _tokenizer.convert_ids_to_tokens(_tokenizer.encode(req.q))
 
+    # target_prefix: just the NLLB language code string — it's in the vocabulary.
     results = _translator.translate_batch(
         [tokens],
         target_prefix=[[tgt_lang]],
@@ -109,8 +109,10 @@ def translate(req: TranslateRequest) -> TranslateResponse:
         repetition_penalty=1.3,
     )
 
-    # Drop the forced target-language token at position 0.
-    output_tokens = results[0].hypotheses[0][1:]
-    translated = _sp.Decode(output_tokens)
+    output_tokens = results[0].hypotheses[0]
+    translated = _tokenizer.decode(
+        _tokenizer.convert_tokens_to_ids(output_tokens),
+        skip_special_tokens=True,
+    )
 
     return TranslateResponse(translatedText=translated)

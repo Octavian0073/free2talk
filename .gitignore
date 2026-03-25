@@ -21,6 +21,12 @@ ml-service/*.pyc
 ml-service/.venv/
 ml-service/venv/
 
+# Translate service
+translate-service/nllb-600m-ct2/
+translate-service/__pycache__/
+translate-service/*.pyc
+translate-service/.venv/
+
 # OS
 .DS_Store
 Thumbs.db

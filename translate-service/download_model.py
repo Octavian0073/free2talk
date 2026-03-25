@@ -31,4 +31,8 @@ subprocess.run(
     check=True,
 )
 
-print(f"\nDone. Model saved to {OUTPUT_DIR}/")
+print(f"\nConversion done. Saving tokenizer locally...")
+from transformers import NllbTokenizer
+tokenizer = NllbTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
+tokenizer.save_pretrained(OUTPUT_DIR)
+print(f"Done. Model + tokenizer saved to {OUTPUT_DIR}/")
