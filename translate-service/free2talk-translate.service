@@ -1,0 +1,22 @@
+[Unit]
+Description=free2talk translate-service (NLLB-600M)
+After=network.target
+# Start after the main backend so it's not blocking boot.
+Wants=free2talk.service
+
+[Service]
+Type=simple
+User=free2talk
+WorkingDirectory=/home/free2talk/free2talk/translate-service
+Environment="MODEL_DIR=/home/free2talk/free2talk/translate-service/nllb-600m-ct2"
+Environment="INTER_THREADS=2"
+Environment="INTRA_THREADS=2"
+ExecStart=/home/free2talk/free2talk/translate-service/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 5001 --workers 1
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=free2talk-translate
+
+[Install]
+WantedBy=multi-user.target
