@@ -19,9 +19,10 @@ if os.path.isdir(OUTPUT_DIR) and os.listdir(OUTPUT_DIR):
 print("Downloading + converting facebook/nllb-200-distilled-600M to CTranslate2 int8...")
 print("This will download ~1.2 GB and may take a few minutes.\n")
 
+converter = os.path.join(os.path.dirname(sys.executable), "ct2-transformers-converter")
 subprocess.run(
     [
-        "ct2-transformers-converter",
+        converter,
         "--model", "facebook/nllb-200-distilled-600M",
         "--output_dir", OUTPUT_DIR,
         "--quantization", "int8",
