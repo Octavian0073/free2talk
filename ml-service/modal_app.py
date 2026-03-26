@@ -177,14 +177,21 @@ class MLService:
 
         forced_bos_token_id = self.nllb_tokenizer.convert_tokens_to_ids(tgt_nllb)
 
+        # Cap output length relative to input — prevents short inputs (1-2 words)
+        # from causing hallucination loops. Minimum 20 tokens, max 128.
+        input_token_count = inputs["input_ids"].shape[1]
+        dynamic_max_new_tokens = min(128, max(20, input_token_count * 3))
+
         with torch.no_grad():
             output_ids = self.nllb_model.generate(
                 **inputs,
                 forced_bos_token_id=forced_bos_token_id,
-                max_new_tokens=128,       # conversation sentences are short
+                max_new_tokens=dynamic_max_new_tokens,
+                max_length=None,          # override model's default generation_config
                 num_beams=4,
-                no_repeat_ngram_size=4,   # prevents repetition loops
-                repetition_penalty=1.3,   # extra penalty for repeated tokens
+                no_repeat_ngram_size=4,
+                repetition_penalty=1.5,   # raised from 1.3 — short inputs need harder penalty
+                early_stopping=True,
             )
 
         return self.nllb_tokenizer.decode(output_ids[0], skip_special_tokens=True).strip()
