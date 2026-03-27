@@ -76,7 +76,7 @@ app = modal.App("free2talk-ml", image=image)
 
 
 @app.cls(
-    gpu="T4",                   # T4: 16GB VRAM — Whisper (~3GB) + NLLB-3.3B (~6.6GB) = ~9.6GB
+    gpu="T4",                   # T4: 16GB VRAM — Whisper (~3GB) + opus-mt x4 (~1.2GB) = ~4.2GB
     volumes={MODELS_DIR: volume},
     secrets=[modal.Secret.from_name("huggingface")],
     scaledown_window=300,       # stay warm 5 min after last request
