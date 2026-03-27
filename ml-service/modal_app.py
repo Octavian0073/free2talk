@@ -144,7 +144,7 @@ class MLService:
             segments, _ = self.whisper.transcribe(
                 tmp,
                 language=src_lang,
-                beam_size=1,
+                beam_size=5,
                 vad_filter=True,
                 vad_parameters={"min_silence_duration_ms": 300},
                 condition_on_previous_text=False,
