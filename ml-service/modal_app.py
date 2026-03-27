@@ -2,10 +2,8 @@
 free2talk ML service — Modal deployment.
 
 Models:
-  - faster-whisper large-v3            (CUDA float16)  — speech-to-text
-  - Helsinki-NLP opus-mt-tc-big x4     (CUDA float16)  — translation
-      ja→en, en→ja, en→ro, ro→en
-    Specialized per-pair NMT models — no hallucination, ~300MB each vs 6.6GB NLLB.
+  - faster-whisper large-v3       (CUDA float16)  — speech-to-text
+  - NLLB-200-3.3B                 (CUDA float16)  — translation (200 languages)
 
 The /transcribe endpoint is intentionally identical to the local FastAPI
 service so the Go backend requires zero changes — only ML_SERVICE_URL and
@@ -17,7 +15,7 @@ One-time setup (run from project root):
   modal volume create free2talk-models
   modal deploy ml-service/modal_app.py
 
-On first container start, all models are downloaded from HuggingFace to the
+On first container start, both models are downloaded from HuggingFace to the
 persistent volume automatically. Subsequent starts load from the volume.
 """
 
@@ -60,23 +58,23 @@ volume = modal.Volume.from_name("free2talk-models", create_if_missing=True)
 
 MODELS_DIR    = "/models"
 WHISPER_CACHE = f"{MODELS_DIR}/whisper_cache"
-OPUS_CACHE    = f"{MODELS_DIR}/opus_cache"
+NLLB_CACHE    = f"{MODELS_DIR}/nllb_cache"
+NLLB_MODEL_ID = "facebook/nllb-200-3.3B"
 
 SUPPORTED_LANGS = {"en", "ro", "ja"}
 
-# Specialized per-pair translation models — keyed by "src-tgt".
-OPUS_MODELS = {
-    "ja-en": "Helsinki-NLP/opus-mt-tc-big-ja-en",
-    "en-ja": "Helsinki-NLP/opus-mt-tc-big-en-ja",
-    "en-ro": "Helsinki-NLP/opus-mt-tc-big-en-ro",
-    "ro-en": "Helsinki-NLP/opus-mt-tc-big-ro-en",
+# NLLB uses BCP-47 + script tags internally
+NLLB_LANG_CODES = {
+    "en": "eng_Latn",
+    "ro": "ron_Latn",
+    "ja": "jpn_Jpan",
 }
 
 app = modal.App("free2talk-ml", image=image)
 
 
 @app.cls(
-    gpu="T4",                   # T4: 16GB VRAM — Whisper (~3GB) + opus-mt x4 (~1.2GB) = ~4.2GB
+    gpu="T4",                   # T4: 16GB VRAM — Whisper (~3GB) + NLLB-3.3B (~6.6GB) = ~9.6GB
     volumes={MODELS_DIR: volume},
     secrets=[modal.Secret.from_name("huggingface")],
     scaledown_window=300,       # stay warm 5 min after last request
@@ -88,10 +86,10 @@ class MLService:
 
     @modal.enter()
     def load_models(self):
-        """Load all models once per container. Reused across all requests."""
+        """Load both models once per container. Reused across all requests."""
         import torch
         from faster_whisper import WhisperModel
-        from transformers import MarianMTModel, MarianTokenizer
+        from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
         # Whisper large-v3
         self.whisper = WhisperModel(
@@ -102,17 +100,18 @@ class MLService:
             num_workers=1,
         )
 
-        # opus-mt-tc-big — one model per language pair, all loaded into VRAM.
-        # ~300MB each, ~1.2GB total vs 6.6GB for NLLB-3.3B.
-        self.translators = {}
-        for pair, model_id in OPUS_MODELS.items():
-            tokenizer = MarianTokenizer.from_pretrained(model_id, cache_dir=OPUS_CACHE)
-            model = MarianMTModel.from_pretrained(
-                model_id,
-                torch_dtype=torch.float16,
-                cache_dir=OPUS_CACHE,
-            ).to("cuda").eval()
-            self.translators[pair] = (model, tokenizer)
+        # NLLB-200-3.3B
+        self.nllb_tokenizer = AutoTokenizer.from_pretrained(
+            NLLB_MODEL_ID,
+            cache_dir=NLLB_CACHE,
+        )
+        self.nllb_model = AutoModelForSeq2SeqLM.from_pretrained(
+            NLLB_MODEL_ID,
+            dtype=torch.float16,
+            device_map="cuda",
+            cache_dir=NLLB_CACHE,
+        )
+        self.nllb_model.eval()
 
         # Warm up Whisper — pays CUDA JIT cost once at container start
         # so the first real utterance during a call is fast.
@@ -164,28 +163,38 @@ class MLService:
 
         import torch
 
-        pair = f"{src_lang}-{tgt_lang}"
-        if pair not in self.translators:
-            return text
+        src_nllb = NLLB_LANG_CODES[src_lang]
+        tgt_nllb = NLLB_LANG_CODES[tgt_lang]
 
-        model, tokenizer = self.translators[pair]
-
-        inputs = tokenizer(
+        inputs = self.nllb_tokenizer(
             text,
             return_tensors="pt",
             padding=True,
             truncation=True,
             max_length=512,
+            src_lang=src_nllb,
         ).to("cuda")
 
+        forced_bos_token_id = self.nllb_tokenizer.convert_tokens_to_ids(tgt_nllb)
+
+        # Cap output length relative to input — prevents short inputs (1-2 words)
+        # from causing hallucination loops. Minimum 20 tokens, max 128.
+        input_token_count = inputs["input_ids"].shape[1]
+        dynamic_max_new_tokens = min(128, max(20, input_token_count * 3))
+
         with torch.no_grad():
-            output_ids = model.generate(
+            output_ids = self.nllb_model.generate(
                 **inputs,
+                forced_bos_token_id=forced_bos_token_id,
+                max_new_tokens=dynamic_max_new_tokens,
+                max_length=None,          # override model's default generation_config
                 num_beams=4,
+                no_repeat_ngram_size=4,
+                repetition_penalty=1.5,   # raised from 1.3 — short inputs need harder penalty
                 early_stopping=True,
             )
 
-        return tokenizer.decode(output_ids[0], skip_special_tokens=True).strip()
+        return self.nllb_tokenizer.decode(output_ids[0], skip_special_tokens=True).strip()
 
     @modal.asgi_app()
     def serve(self):
@@ -242,6 +251,6 @@ class MLService:
 
         @api.get("/health")
         def health():
-            return {"status": "ok", "backend": "whisper-large-v3+opus-mt-tc-big"}
+            return {"status": "ok", "backend": "whisper-large-v3+nllb-200-3.3b"}
 
         return api
