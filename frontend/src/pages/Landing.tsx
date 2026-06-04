@@ -71,17 +71,17 @@ export default function Landing() {
           <FeatureCard
             icon="🎙️"
             title="Live Captions"
-            description="Your speech is transcribed and translated in real time. Powered by Whisper + NLLB-200."
+            description="Your speech is transcribed and translated in real time, powered by state-of-the-art AI speech recognition and neural machine translation."
           />
           <FeatureCard
             icon="💬"
             title="Translated Chat"
-            description="Send a message in English, your friend reads it in Romanian or Japanese — instantly."
+            description="Each of you types in your own language. The other reads it in theirs — automatically translated."
           />
           <FeatureCard
             icon="🎥"
             title="Video Calls"
-            description="Peer-to-peer WebRTC video. No relay server required on the same network."
+            description="Direct encrypted video calls via WebRTC, with automatic TURN relay fallback when needed."
           />
         </div>
 
